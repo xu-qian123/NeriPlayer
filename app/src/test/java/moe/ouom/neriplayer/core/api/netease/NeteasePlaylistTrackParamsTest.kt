@@ -29,4 +29,28 @@ class NeteasePlaylistTrackParamsTest {
             )
         }
     }
+
+    @Test
+    fun `playlist delete params include batch fields used by netease manipulate tracks`() {
+        val params = buildNeteasePlaylistDeleteTracksParams(
+            playlistId = 99L,
+            songIds = listOf(4L, 5L, 5L, 0L, -2L, 6L)
+        )
+
+        assertEquals("del", params["op"])
+        assertEquals("99", params["pid"])
+        assertEquals("99", params["id"])
+        assertEquals("4,5,6", params["tracks"])
+        assertEquals("[4,5,6]", params["trackIds"])
+    }
+
+    @Test
+    fun `playlist delete params reject empty positive song ids`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            buildNeteasePlaylistDeleteTracksParams(
+                playlistId = 99L,
+                songIds = listOf(0L, -1L)
+            )
+        }
+    }
 }

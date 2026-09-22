@@ -21,6 +21,8 @@ import moe.ouom.neriplayer.data.settings.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreferencePolicy
+import moe.ouom.neriplayer.data.settings.decodeToolbarButtons
+import moe.ouom.neriplayer.data.settings.encodeToolbarButtons
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlignment
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlpha
@@ -243,6 +245,9 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
             onAdjusted,
             ::normalizePlaybackEqualizerBandLevels
         )
+        sanitizeStringValue(strings, SettingsKeys.NOWPLAYING_TOOLBAR_BUTTONS.name, onAdjusted) {
+            encodeToolbarButtons(decodeToolbarButtons(it))
+        }
     }
 
     private fun sanitizeThemeStrings(

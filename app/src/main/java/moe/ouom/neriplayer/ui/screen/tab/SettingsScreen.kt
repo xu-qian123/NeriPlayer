@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.tab
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -36,23 +36,34 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BrightnessAuto
@@ -99,6 +110,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -113,6 +125,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -130,6 +143,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
@@ -192,8 +206,11 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.UsbExclusiveSettingsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.YouTubePlaybackSourceSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
+import moe.ouom.neriplayer.data.settings.DEFAULT_NOWPLAYING_TOOLBAR_BUTTONS_CONFIG
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsToolbarButtonsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.HomeSectionsOrderDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -341,35 +358,51 @@ private fun SettingsSearchField(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    val isDark = isSystemInDarkTheme()
     val shape = RoundedCornerShape(16.dp)
+    val bgColor = if (isDark) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+    val borderColor = if (isDark) {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    }
 
-    AdvancedGlassSurface(
-        role = AdvancedGlassRole.SettingsSection,
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp),
-        shape = shape,
-        fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f),
-        tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            .height(48.dp)
+            .clip(shape)
+            .background(bgColor)
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = shape
+            )
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.CenterStart
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Outlined.Search,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+
+            Spacer(Modifier.width(10.dp))
+
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
                 modifier = Modifier.weight(1f),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -379,18 +412,36 @@ private fun SettingsSearchField(
                     onSearch = { focusManager.clearFocus() }
                 ),
                 decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (query.isBlank()) {
-                            Text(
-                                text = stringResource(R.string.settings_search_hint),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        innerTextField()
+                    if (query.isBlank()) {
+                        Text(
+                            text = stringResource(R.string.settings_search_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
+                    innerTextField()
                 }
             )
+
+            AnimatedVisibility(
+                visible = query.isNotEmpty(),
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                HapticIconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Clear,
+                        contentDescription = stringResource(R.string.action_clear),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -3219,6 +3270,11 @@ private fun SettingsPersonalizationPageContent(
         val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow.collectAsState(
             initial = true
         )
+        val nowPlayingToolbarButtons by autoSettingsRepository.nowPlayingToolbarButtonsFlow.collectAsState(
+            initial = DEFAULT_NOWPLAYING_TOOLBAR_BUTTONS_CONFIG
+        )
+        var showToolbarButtonsDialog by remember { mutableStateOf(false) }
+        var showHomeSectionsOrderDialog by remember { mutableStateOf(false) }
         val playbackControlLayoutPreferences by AppContainer.settingsRepo
             .playbackControlLayoutPreferencesFlow
             .collectAsState(initial = PlaybackControlLayoutPreferences())
@@ -3279,6 +3335,23 @@ private fun SettingsPersonalizationPageContent(
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_home_section),
                 description = stringResource(R.string.settings_personalization_home_section_desc)
+            )
+            PlaybackControlLayoutListItem(
+                targetId = "setting:home_sections_order",
+                icon = Icons.AutoMirrored.Outlined.Sort,
+                title = stringResource(R.string.settings_home_sections_order),
+                description = stringResource(R.string.settings_home_sections_order_desc),
+                value = "",
+                onClick = { showHomeSectionsOrderDialog = true },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            HomeSectionsOrderDialog(
+                showDialog = showHomeSectionsOrderDialog,
+                onDismissRequest = { showHomeSectionsOrderDialog = false },
+                autoSettingsRepository = autoSettingsRepository,
+                scope = scope
             )
             SettingsHomeCardSwitch(
                 title = stringResource(R.string.player_continue),
@@ -3468,6 +3541,25 @@ private fun SettingsPersonalizationPageContent(
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
+            )
+            PlaybackControlLayoutListItem(
+                targetId = "setting:nowplaying_toolbar_buttons",
+                icon = Icons.Outlined.DashboardCustomize,
+                title = stringResource(R.string.settings_nowplaying_toolbar_buttons),
+                description = stringResource(R.string.settings_nowplaying_toolbar_buttons_desc),
+                value = "",
+                onClick = { showToolbarButtonsDialog = true },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            SettingsToolbarButtonsDialog(
+                showDialog = showToolbarButtonsDialog,
+                onDismissRequest = { showToolbarButtonsDialog = false },
+                config = nowPlayingToolbarButtons,
+                onConfigChange = { newConfig ->
+                    scope.launch { autoSettingsRepository.setNowPlayingToolbarButtons(newConfig) }
+                }
             )
             PlaybackControlLayoutSettings(
                 preferences = playbackControlLayoutPreferences,

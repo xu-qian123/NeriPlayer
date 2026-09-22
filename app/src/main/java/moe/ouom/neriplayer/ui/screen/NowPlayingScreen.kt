@@ -184,6 +184,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -200,6 +201,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
+import coil.imageLoader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -249,9 +251,16 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.settings.CombinedPlaybackMode
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_NOWPLAYING_TOOLBAR_BUTTONS_CONFIG
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.NowPlayingToolbarButton
+import moe.ouom.neriplayer.data.settings.cycleCombinedPlaybackMode
+import moe.ouom.neriplayer.data.settings.decodeToolbarButtons
+import moe.ouom.neriplayer.data.settings.visibleButtons
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.data.settings.LyricFontScalePage
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
@@ -532,11 +541,13 @@ internal fun resolvePlaybackActionToolbarLayout(
     availableWidth: Dp,
     preferredHorizontalPadding: Dp,
     defaultIconSize: Dp,
-    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget
+    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget,
+    itemCount: Int = PlaybackActionToolbarItemCount
 ): PlaybackActionToolbarLayout {
+    val count = itemCount.coerceAtLeast(1)
     val minimumTouchTarget = preferredMinimumTouchTarget.coerceAtLeast(0.dp)
     val preferredSlotWidth = (
-        (availableWidth - preferredHorizontalPadding * 2) / PlaybackActionToolbarItemCount
+        (availableWidth - preferredHorizontalPadding * 2) / count
         ).coerceAtLeast(0.dp)
     if (preferredSlotWidth >= minimumTouchTarget) {
         return PlaybackActionToolbarLayout(
@@ -547,7 +558,7 @@ internal fun resolvePlaybackActionToolbarLayout(
         )
     }
 
-    val compactSlotWidth = (availableWidth / PlaybackActionToolbarItemCount).coerceAtLeast(0.dp)
+    val compactSlotWidth = (availableWidth / count).coerceAtLeast(0.dp)
     return PlaybackActionToolbarLayout(
         horizontalPadding = 0.dp,
         minimumInteractiveComponentSize = minOf(
@@ -575,8 +586,8 @@ internal fun resolveNowPlayingMainControlsLayout(
     primaryButtonSize: Dp,
     preferredSpacing: Dp
 ): NowPlayingMainControlsLayout {
-    val gapCount = PlaybackActionToolbarItemCount - 1
-    val requestedButtonWidth = secondaryButtonSize * 4 + primaryButtonSize
+    val gapCount = 2
+    val requestedButtonWidth = secondaryButtonSize * 2 + primaryButtonSize
     val minimumSpacing = minOf(
         NowPlayingMainControlsMinimumSpacing,
         availableWidth / gapCount
@@ -593,13 +604,13 @@ internal fun resolveNowPlayingMainControlsLayout(
     val resolvedSecondaryButtonSize = secondaryButtonSize * buttonScale
     val resolvedPrimaryButtonSize = primaryButtonSize * buttonScale
     val maximumSpacing = (
-        (availableWidth - resolvedSecondaryButtonSize * 4 - resolvedPrimaryButtonSize) /
+        (availableWidth - resolvedSecondaryButtonSize * 2 - resolvedPrimaryButtonSize) /
             gapCount
         ).coerceAtLeast(0.dp)
     return NowPlayingMainControlsLayout(
         secondaryButtonSize = resolvedSecondaryButtonSize,
         primaryButtonSize = resolvedPrimaryButtonSize,
-        spacing = minOf(preferredSpacing, maximumSpacing)
+        spacing = minOf(preferredSpacing, maximumSpacing).coerceAtLeast(0.dp)
     )
 }
 
@@ -1890,6 +1901,15 @@ fun NowPlayingScreen(
     val nowPlayingToolbarDockEnabled by settingsRepo
         .nowPlayingToolbarDockEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val nowPlayingToolbarButtonsConfig by settingsRepo
+        .nowPlayingToolbarButtonsFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_NOWPLAYING_TOOLBAR_BUTTONS_CONFIG)
+    val nowPlayingToolbarItems = remember(nowPlayingToolbarButtonsConfig) {
+        decodeToolbarButtons(nowPlayingToolbarButtonsConfig)
+    }
+    val visibleToolbarButtons = remember(nowPlayingToolbarItems) {
+        nowPlayingToolbarItems.visibleButtons()
+    }
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
         .collectAsStateWithLifecycle(initialValue = PlaybackControlLayoutPreferences())
@@ -1950,6 +1970,32 @@ fun NowPlayingScreen(
     val coverPreviewOnTapEnabled = shouldOpenNowPlayingCoverPreviewOnTap(currentSong)
     val coverPreviewOnLongPressEnabled =
         shouldOpenNowPlayingCoverPreviewOnLongPress(currentSong)
+
+    val coverWarmupKey = coverSongKey ?: currentCoverUrl ?: "none"
+    var warmedCoverRequestSizePx by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(coverWarmupKey, offlineMode, warmedCoverRequestSizePx) {
+        val url = currentCoverUrl?.trim()?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            val loader = context.imageLoader
+            val warmupSizes = listOf(
+                192, // 歌词页顶部小封面（LyricsScreen 固定 192px 请求）
+                warmedCoverRequestSizePx ?: return@withContext // 播放页大封面（测量后尺寸）
+            )
+            for (sizePx in warmupSizes) {
+                runCatching {
+                    val request = offlineCachedImageRequest(
+                        context = context,
+                        data = url,
+                        sizePx = sizePx,
+                        allowHardware = false,
+                        crossfade = false,
+                        offlineMode = offlineMode
+                    )
+                    loader.execute(request)
+                }
+            }
+        }
+    }
 
     // 点击即切换, 回流后撤销覆盖
     var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
@@ -2748,22 +2794,6 @@ fun NowPlayingScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             HapticIconButton(
-                                onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
-                                modifier = Modifier.size(controlsLayout.secondaryButtonSize)
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Shuffle,
-                                    contentDescription = stringResource(R.string.player_shuffle),
-                                    modifier = Modifier.size(secondaryIconSize),
-                                    tint = if (shuffleEnabled) {
-                                        nowPlayingActiveIconColor
-                                    } else {
-                                        LocalContentColor.current
-                                    }
-                                )
-                            }
-
-                            HapticIconButton(
                                 onClick = { PlayerManager.previous() },
                                 modifier = Modifier
                                     .sharedElement(
@@ -2821,26 +2851,6 @@ fun NowPlayingScreen(
                                     Icons.Outlined.SkipNext,
                                     contentDescription = stringResource(R.string.player_next),
                                     modifier = Modifier.size(secondaryIconSize)
-                                )
-                            }
-
-                            HapticIconButton(
-                                onClick = { PlayerManager.cycleRepeatMode() },
-                                modifier = Modifier.size(controlsLayout.secondaryButtonSize)
-                            ) {
-                                Icon(
-                                    imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) {
-                                        Icons.Filled.RepeatOne
-                                    } else {
-                                        Icons.Outlined.Repeat
-                                    },
-                                    contentDescription = stringResource(R.string.player_repeat),
-                                    modifier = Modifier.size(secondaryIconSize),
-                                    tint = if (repeatMode != Player.REPEAT_MODE_OFF) {
-                                        nowPlayingActiveIconColor
-                                    } else {
-                                        LocalContentColor.current
-                                    }
                                 )
                             }
                         }
@@ -2915,58 +2925,42 @@ fun NowPlayingScreen(
                         }
 
                         // 收藏和更多按钮 - 右侧
-                        Row(
-                            modifier = Modifier.align(Alignment.CenterEnd)
+                        // 收藏按钮 - 右侧
+                        HapticIconButton(
+                            onClick = {
+                                val song = currentSong ?: return@HapticIconButton
+                                val willFav = nextFavoriteStateAfterTap(isFavorite)
+                                launchWithLocalSyncWarning(
+                                    song = song,
+                                    actionLabel = composeResources.getString(R.string.favorite_add),
+                                    warnForLocalSync = willFav
+                                ) {
+                                    favOverride = willFav
+                                    PlayerManager.toggleCurrentFavorite()
+                                }
+                            },
+                            enabled = localPlaylistsReady,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .size(nowPlayingTopActionButtonSize)
+                                .sharedElement(
+                                    rememberSharedContentState(key = "btn_favorite"),
+                                    animatedVisibilityScope = this@AnimatedContent
+                                ).zIndex(1f)
                         ) {
-                            HapticIconButton(
-                                onClick = {
-                                    val song = currentSong ?: return@HapticIconButton
-                                    val willFav = nextFavoriteStateAfterTap(isFavorite)
-                                    launchWithLocalSyncWarning(
-                                        song = song,
-                                        actionLabel = composeResources.getString(R.string.favorite_add),
-                                        warnForLocalSync = willFav
-                                    ) {
-                                        favOverride = willFav
-                                        PlayerManager.toggleCurrentFavorite()
-                                    }
-                                },
-                                enabled = localPlaylistsReady,
-                                modifier = Modifier.size(nowPlayingTopActionButtonSize)
-                                    .sharedElement(
-                                        rememberSharedContentState(key = "btn_favorite"),
-                                        animatedVisibilityScope = this@AnimatedContent
-                                    ).zIndex(1f)
-                            ) {
-                                Icon(
-                                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                    contentDescription = if (isFavorite) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
-                                    modifier = Modifier.size(nowPlayingTopActionIconSize),
-                                    tint = if (isFavorite) {
-                                        Color.Red.copy(alpha = 0.6f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
-                            }
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = if (isFavorite) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
+                                modifier = Modifier.size(nowPlayingTopActionIconSize),
+                                tint = if (isFavorite) {
+                                    Color.Red.copy(alpha = 0.6f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
 
-                            HapticIconButton(
-                                onClick = { showMoreOptions = true },
-                                modifier = Modifier.size(nowPlayingTopActionButtonSize)
-                                    .sharedBounds(
-                                        rememberSharedContentState(key = "btn_more"),
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        enter = EnterTransition.None,
-                                        exit = ExitTransition.None,
-                                    ).zIndex(1f)
-                            ) {
-                                Icon(
-                                    Icons.Filled.MoreVert,
-                                    contentDescription = stringResource(R.string.nowplaying_more_options),
-                                    modifier = Modifier.size(nowPlayingTopActionIconSize)
-                                )
-                            }
-                            if (showMoreOptions && currentSong != null) {
+                        if (showMoreOptions && currentSong != null) {
                                 MoreOptionsSheet(
                                     viewModel = nowPlayingViewModel,
                                     originalSong = currentSong!!,
@@ -2988,9 +2982,8 @@ fun NowPlayingScreen(
                                 )
                             }
                         }
-                    }
 
-                    Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(8.dp))
 
                     // 封面
                     BoxWithConstraints(
@@ -3011,7 +3004,7 @@ fun NowPlayingScreen(
                         }
                         val coverRequestSizePx = with(LocalDensity.current) {
                             coverSize.roundToPx().coerceAtLeast(256)
-                        }
+                        }.also { warmedCoverRequestSizePx = it }
                         Box(
                             modifier = Modifier
                                 .align(Alignment.Center)
@@ -3296,7 +3289,8 @@ fun NowPlayingScreen(
                                     preferredHorizontalPadding = preferredToolbarPadding,
                                     defaultIconSize = nowPlayingToolbarIconSize,
                                     preferredMinimumTouchTarget =
-                                        nowPlayingToolbarMinimumTouchTarget
+                                        nowPlayingToolbarMinimumTouchTarget,
+                                    itemCount = visibleToolbarButtons.size
                                 )
                                 CompositionLocalProvider(
                                     LocalMinimumInteractiveComponentSize provides
@@ -3327,108 +3321,169 @@ fun NowPlayingScreen(
                                         } else {
                                             Modifier
                                         }
-                                // 播放队列
-                                HapticIconButton(onClick = { showQueueSheet = true },
-                                    modifier = toolbarActionModifier
-                                        .sharedBounds(
-                                        rememberSharedContentState(key = "btn_queue"),
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            enter = EnterTransition.None,
-                                            exit = ExitTransition.None,
-                                        ).zIndex(1f)) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.QueueMusic,
-                                        contentDescription = stringResource(R.string.playlist_queue),
-                                        modifier = Modifier.size(toolbarLayout.iconSize)
-                                    )
-                                }
 
-                                // 定时器按钮
-                                HapticIconButton(onClick = { showSleepTimerDialog = true },
-                                    modifier = toolbarActionModifier
-                                    .sharedBounds(
-                                        rememberSharedContentState(key = "btn_timer"),
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        enter = EnterTransition.None,
-                                        exit = ExitTransition.None,
-                                    ).zIndex(1f)) {
-                                    Icon(
-                                        Icons.Outlined.Timer,
-                                        contentDescription = stringResource(R.string.sleep_timer_short),
-                                        tint = if (sleepTimerState.isActive) {
-                                            nowPlayingActiveIconColor
-                                        } else {
-                                            LocalContentColor.current
-                                        },
-                                        modifier = Modifier.size(toolbarLayout.iconSize)
-                                    )
-                                }
-
-                                // 音量按钮 (根据设备显示不同图标, 居中)
-                                val audioDeviceInfo = rememberAudioDeviceInfo()
-                                HapticIconButton(onClick = { showVolumeSheet = true },
-                                    modifier = toolbarActionModifier
-                                        .sharedBounds(
-                                        rememberSharedContentState(key = "btn_volume"),
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        enter = EnterTransition.None,
-                                        exit = ExitTransition.None,
-                                    ).zIndex(1f)
-                                ) {
-                                    Icon(
-                                        audioDeviceInfo.second,
-                                        contentDescription = audioDeviceInfo.first,
-                                        modifier = Modifier.size(toolbarLayout.iconSize)
-                                    )
-                                }
-
-                                // 歌词按钮
-                                HapticIconButton(
-                                    onClick = { onShowLyricsScreenChange(!showLyricsScreen) },
-                                    enabled = lyrics.isNotEmpty(),
-                                    modifier = toolbarActionModifier
-                                        .sharedBounds(
-                                            rememberSharedContentState(key = "btn_lyrics"),
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            enter = EnterTransition.None,
-                                            exit = ExitTransition.None,
-                                        ).zIndex(1f)
-                                ) {
-                                    AnimatedContent(
-                                        targetState = showLyricsScreen,
-                                        label = "lyrics_icon"
-                                    ) { isShowingLyrics ->
-                                        Icon(
-                                            imageVector = if (isShowingLyrics) Icons.Outlined.LibraryMusic else Icons.Outlined.LibraryMusic,
-                                            contentDescription = stringResource(R.string.lyrics_title),
-                                            tint = if (lyrics.isEmpty()) {
-                                                LocalContentColor.current.copy(alpha = 0.38f)
-                                            } else if (isShowingLyrics) {
-                                                nowPlayingActiveIconColor
-                                            } else {
-                                                LocalContentColor.current
-                                            },
-                                            modifier = Modifier.size(toolbarLayout.iconSize)
-                                        )
-                                    }
-                                }
-
-                                // 添加到歌单
-                                HapticIconButton(onClick = { showAddSheet = true },
-                                    modifier = toolbarActionModifier
-                                        .sharedBounds(
-                                            rememberSharedContentState(key = "btn_add"),
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            enter = EnterTransition.None,
-                                            exit = ExitTransition.None,
-                                        ).zIndex(1f)
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                        contentDescription = stringResource(R.string.playlist_add_to),
-                                        modifier = Modifier.size(toolbarLayout.iconSize)
-                                    )
-                                }
+                                        visibleToolbarButtons.forEach { button ->
+                                            when (button) {
+                                                NowPlayingToolbarButton.QUEUE -> {
+                                                    // 播放队列
+                                                    HapticIconButton(
+                                                        onClick = { showQueueSheet = true },
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_queue"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.AutoMirrored.Outlined.QueueMusic,
+                                                            contentDescription = stringResource(R.string.playlist_queue),
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                                NowPlayingToolbarButton.PLAY_MODE -> {
+                                                    // 播放模式 (合并循环/随机)
+                                                    val combinedMode = CombinedPlaybackMode.resolve(
+                                                        shuffle = shuffleEnabled,
+                                                        repeatMode = repeatMode
+                                                    )
+                                                    HapticIconButton(
+                                                        onClick = {
+                                                            PlayerManager.cycleCombinedPlaybackMode()
+                                                        },
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_play_mode"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = combinedMode.icon,
+                                                            contentDescription = stringResource(combinedMode.titleRes),
+                                                            tint = if (combinedMode.isActive) {
+                                                                nowPlayingActiveIconColor
+                                                            } else {
+                                                                LocalContentColor.current
+                                                            },
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                                NowPlayingToolbarButton.VOLUME -> {
+                                                    // 音量按钮 (根据设备显示不同图标)
+                                                    val audioDeviceInfo = rememberAudioDeviceInfo()
+                                                    HapticIconButton(
+                                                        onClick = { showVolumeSheet = true },
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_volume"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            audioDeviceInfo.second,
+                                                            contentDescription = audioDeviceInfo.first,
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                                NowPlayingToolbarButton.LYRICS -> {
+                                                    // 歌词按钮 (方案B: 使用现代歌词卡片矢量图标 ic_lyrics_24)
+                                                    HapticIconButton(
+                                                        onClick = { onShowLyricsScreenChange(!showLyricsScreen) },
+                                                        enabled = lyrics.isNotEmpty(),
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_lyrics"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            painter = painterResource(R.drawable.ic_lyrics_24),
+                                                            contentDescription = stringResource(R.string.lyrics_title),
+                                                            tint = if (lyrics.isEmpty()) {
+                                                                LocalContentColor.current.copy(alpha = 0.38f)
+                                                            } else if (showLyricsScreen) {
+                                                                nowPlayingActiveIconColor
+                                                            } else {
+                                                                LocalContentColor.current
+                                                            },
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                                NowPlayingToolbarButton.MORE -> {
+                                                    // 更多操作按钮
+                                                    HapticIconButton(
+                                                        onClick = { showMoreOptions = true },
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_more"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Filled.MoreVert,
+                                                            contentDescription = stringResource(R.string.nowplaying_more_options),
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                                NowPlayingToolbarButton.ADD_TO_PLAYLIST -> {
+                                                    // 添加到歌单
+                                                    HapticIconButton(
+                                                        onClick = { showAddSheet = true },
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_add"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                                            contentDescription = stringResource(R.string.playlist_add_to),
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                                NowPlayingToolbarButton.TIMER -> {
+                                                    // 定时器按钮
+                                                    HapticIconButton(
+                                                        onClick = { showSleepTimerDialog = true },
+                                                        modifier = toolbarActionModifier
+                                                            .sharedBounds(
+                                                                rememberSharedContentState(key = "btn_timer"),
+                                                                animatedVisibilityScope = this@AnimatedContent,
+                                                                enter = EnterTransition.None,
+                                                                exit = ExitTransition.None,
+                                                            ).zIndex(1f)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Outlined.Timer,
+                                                            contentDescription = stringResource(R.string.sleep_timer_short),
+                                                            tint = if (sleepTimerState.isActive) {
+                                                                nowPlayingActiveIconColor
+                                                            } else {
+                                                                LocalContentColor.current
+                                                            },
+                                                            modifier = Modifier.size(toolbarLayout.iconSize)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

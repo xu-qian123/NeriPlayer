@@ -108,6 +108,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -119,6 +120,13 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.settings.CombinedPlaybackMode
+import moe.ouom.neriplayer.data.settings.DEFAULT_NOWPLAYING_TOOLBAR_BUTTONS_CONFIG
+import moe.ouom.neriplayer.data.settings.NowPlayingToolbarButton
+import moe.ouom.neriplayer.data.settings.cycleCombinedPlaybackMode
+import moe.ouom.neriplayer.data.settings.decodeToolbarButtons
+import moe.ouom.neriplayer.data.settings.visibleButtons
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.settings.LyricFontScalePage
@@ -259,6 +267,28 @@ fun LyricsScreen(
     var lyricShareInitialLine by remember(currentSong?.stableKey()) {
         mutableStateOf<LyricEntry?>(null)
     }
+
+    var showMoreOptions by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showVolumeSheet by remember { mutableStateOf(false) }
+    var showAddSheet by remember { mutableStateOf(false) }
+    val addSheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
+
+    val nowPlayingToolbarButtonsConfig by settingsRepo
+        .nowPlayingToolbarButtonsFlow
+        .collectAsState(initial = DEFAULT_NOWPLAYING_TOOLBAR_BUTTONS_CONFIG)
+    val nowPlayingToolbarItems = remember(nowPlayingToolbarButtonsConfig) {
+        decodeToolbarButtons(nowPlayingToolbarButtonsConfig)
+    }
+    val visibleToolbarButtons = remember(nowPlayingToolbarItems) {
+        nowPlayingToolbarItems.visibleButtons()
+    }
+    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
+    val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
+    val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
 
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
@@ -573,52 +603,6 @@ fun LyricsScreen(
                     }
                 )
             }
-
-            // 更多按钮
-            var showMoreOptions by remember { mutableStateOf(false) }
-            HapticIconButton(
-                onClick = { showMoreOptions = true },
-                modifier = Modifier.size(lyricsTopActionButtonSize)
-                    .then(
-                        if (sharedTransitionScope != null && animatedContentScope != null) {
-                            with(sharedTransitionScope) {
-                                Modifier.sharedBounds(
-                                    rememberSharedContentState(key = "btn_more"),
-                                    animatedVisibilityScope = animatedContentScope,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)
-                            }
-                        } else Modifier
-                    )
-            ) {
-                Icon(
-                    Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.lyrics_more_options),
-                    modifier = Modifier.size(lyricsTopActionIconSize)
-                )
-            }
-            if (showMoreOptions && currentSong != null) {
-                val queue by PlayerManager.currentQueueFlow.collectAsState()
-                val displayedQueue = remember(queue) { queue }
-                val nowPlayingViewModel: moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-                MoreOptionsSheet(
-                    viewModel = nowPlayingViewModel,
-                    originalSong = currentSong!!,
-                    queue = displayedQueue,
-                    displayedLyrics = lyrics,
-                    displayedTranslatedLyrics = translatedLyrics.orEmpty(),
-                    hasPhoneticLyrics = effectivePhoneticLyrics.isNotEmpty(),
-                    onDismiss = { showMoreOptions = false },
-                    onShowSongDetails = { detailSong = it },
-                    onEnterAlbum = onEnterAlbum,
-                    onNavigateUp = onExitNowPlaying,
-                    snackbarHostState = snackbarHostState,
-                    lyricFontScalePage = LyricFontScalePage.LYRICS,
-                    lyricFontScales = lyricFontScales,
-                    onLyricFontScaleChange = onLyricFontScaleChange
-                )
-            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -797,7 +781,8 @@ fun LyricsScreen(
                 availableWidth = maxWidth,
                 preferredHorizontalPadding = if (isTabletLandscape) 18.dp else 16.dp,
                 defaultIconSize = toolbarIconSize,
-                preferredMinimumTouchTarget = toolbarMinimumTouchTarget
+                preferredMinimumTouchTarget = toolbarMinimumTouchTarget,
+                itemCount = visibleToolbarButtons.size
             )
             CompositionLocalProvider(
                 LocalMinimumInteractiveComponentSize provides
@@ -830,138 +815,196 @@ fun LyricsScreen(
                     } else {
                         Modifier
                     }
-            // 播放队列按钮
-            var showQueueSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showQueueSheet = true },  modifier = toolbarActionModifier.then(
-                if (sharedTransitionScope != null && animatedContentScope != null) {
-                    with(sharedTransitionScope) {
-                        Modifier.sharedBounds(
-                            rememberSharedContentState(key = "btn_queue"),
-                            animatedVisibilityScope = animatedContentScope,
-                            enter = EnterTransition.None,
-                            exit = ExitTransition.None,
-                        ).zIndex(1f)
-                    }
-                } else Modifier
-            )) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.QueueMusic,
-                    contentDescription = stringResource(R.string.lyrics_playlist),
-                    modifier = Modifier.size(toolbarLayout.iconSize)
-                )
-            }
 
-            // 定时器按钮
-            val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
-            var showSleepTimerDialog by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showSleepTimerDialog = true },
-                modifier = toolbarActionModifier.then(
-                    if (sharedTransitionScope != null && animatedContentScope != null) {
-                        with(sharedTransitionScope) {
-                            Modifier.sharedBounds(
-                                rememberSharedContentState(key = "btn_timer"),
-                                animatedVisibilityScope = animatedContentScope,
-                                enter = EnterTransition.None,
-                                exit = ExitTransition.None,
-                            ).zIndex(1f)
+                    visibleToolbarButtons.forEach { button ->
+                        when (button) {
+                            NowPlayingToolbarButton.QUEUE -> {
+                                HapticIconButton(
+                                    onClick = { showQueueSheet = true },
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_queue"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.QueueMusic,
+                                        contentDescription = stringResource(R.string.lyrics_playlist),
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
+                            NowPlayingToolbarButton.PLAY_MODE -> {
+                                val combinedMode = CombinedPlaybackMode.resolve(
+                                    shuffle = shuffleEnabled,
+                                    repeatMode = repeatMode
+                                )
+                                HapticIconButton(
+                                    onClick = {
+                                        PlayerManager.cycleCombinedPlaybackMode()
+                                    },
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_play_mode"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = combinedMode.icon,
+                                        contentDescription = stringResource(combinedMode.titleRes),
+                                        tint = if (combinedMode.isActive) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
+                            NowPlayingToolbarButton.VOLUME -> {
+                                val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
+                                val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+                                val audioDeviceIcon = remember(devices) {
+                                    when {
+                                        devices.any { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } -> Icons.Default.Headset
+                                        devices.any { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES } -> Icons.Default.Headset
+                                        else -> Icons.Default.SpeakerGroup
+                                    }
+                                }
+                                HapticIconButton(
+                                    onClick = { showVolumeSheet = true },
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_volume"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        audioDeviceIcon,
+                                        contentDescription = stringResource(R.string.cd_audio_device),
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
+                            NowPlayingToolbarButton.LYRICS -> {
+                                // 方案B: 使用现代歌词卡片矢量图标 ic_lyrics_24
+                                HapticIconButton(
+                                    onClick = onNavigateBack,
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_lyrics"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_lyrics_24),
+                                        contentDescription = stringResource(R.string.lyrics_back_to_cover),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
+                            NowPlayingToolbarButton.MORE -> {
+                                HapticIconButton(
+                                    onClick = { showMoreOptions = true },
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_more"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Filled.MoreVert,
+                                        contentDescription = stringResource(R.string.lyrics_more_options),
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
+                            NowPlayingToolbarButton.ADD_TO_PLAYLIST -> {
+                                HapticIconButton(
+                                    onClick = { showAddSheet = true },
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_add"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        contentDescription = stringResource(R.string.lyrics_add_to_playlist),
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
+                            NowPlayingToolbarButton.TIMER -> {
+                                HapticIconButton(
+                                    onClick = { showSleepTimerDialog = true },
+                                    modifier = toolbarActionModifier.then(
+                                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                                            with(sharedTransitionScope) {
+                                                Modifier.sharedBounds(
+                                                    rememberSharedContentState(key = "btn_timer"),
+                                                    animatedVisibilityScope = animatedContentScope,
+                                                    enter = EnterTransition.None,
+                                                    exit = ExitTransition.None,
+                                                ).zIndex(1f)
+                                            }
+                                        } else Modifier
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Timer,
+                                        contentDescription = stringResource(R.string.lyrics_timer),
+                                        tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
+                                    )
+                                }
+                            }
                         }
-                    } else Modifier
-                )) {
-                Icon(
-                    Icons.Outlined.Timer,
-                    contentDescription = stringResource(R.string.lyrics_timer),
-                    tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(toolbarLayout.iconSize)
-                )
-            }
-
-            // 音量按钮 (根据设备显示不同图标, 居中)
-            val context = LocalContext.current
-            val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
-            val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
-            val audioDeviceIcon = remember(devices) {
-                when {
-                    devices.any { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } -> Icons.Default.Headset
-                    devices.any { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES } -> Icons.Default.Headset
-                    else -> Icons.Default.SpeakerGroup
-                }
-            }
-            var showVolumeSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showVolumeSheet = true },
-                modifier = toolbarActionModifier.then(
-                    if (sharedTransitionScope != null && animatedContentScope != null) {
-                        with(sharedTransitionScope) {
-                            Modifier.sharedBounds(
-                                rememberSharedContentState(key = "btn_volume"),
-                                animatedVisibilityScope = animatedContentScope,
-                                enter = EnterTransition.None,
-                                exit = ExitTransition.None,
-                            ).zIndex(1f)
-                        }
-                    } else Modifier
-                )) {
-                Icon(
-                    audioDeviceIcon,
-                    contentDescription = stringResource(R.string.cd_audio_device),
-                    modifier = Modifier.size(toolbarLayout.iconSize)
-                )
-            }
-
-            // 歌词按钮 (返回封面页, 高亮显示)
-            @SuppressLint("UnusedContentLambdaTargetStateParameter")
-            HapticIconButton(onClick = onNavigateBack,
-                modifier = toolbarActionModifier.then(
-                if (sharedTransitionScope != null && animatedContentScope != null) {
-                    with(sharedTransitionScope) {
-                        Modifier.sharedBounds(
-                            rememberSharedContentState(key = "btn_lyrics"),
-                            animatedVisibilityScope = animatedContentScope,
-                            enter = EnterTransition.None,
-                            exit = ExitTransition.None,
-                        ).zIndex(1f)
                     }
-                } else Modifier
-            )) {
-                AnimatedContent(
-                    targetState = true,
-                    transitionSpec = {
-                        (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
-                    },
-                    label = "lyrics_icon"
-                ) { _ ->
-                    Icon(
-                        imageVector = Icons.Outlined.LibraryMusic,
-                        contentDescription = stringResource(R.string.lyrics_back_to_cover),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(toolbarLayout.iconSize)
-                    )
                 }
-            }
-
-            // 添加到歌单按钮
-            var showAddSheet by remember { mutableStateOf(false) }
-            val addSheetState = androidx.compose.material3.rememberModalBottomSheetState(
-                skipPartiallyExpanded = true
-            )
-            HapticIconButton(onClick = { showAddSheet = true },
-                modifier = toolbarActionModifier.then(
-                if (sharedTransitionScope != null && animatedContentScope != null) {
-                    with(sharedTransitionScope) {
-                        Modifier.sharedBounds(
-                            rememberSharedContentState(key = "btn_add"),
-                            animatedVisibilityScope = animatedContentScope,
-                            enter = EnterTransition.None,
-                            exit = ExitTransition.None,
-                        ).zIndex(1f)
-                    }
-                } else Modifier
-            )) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.PlaylistAdd,
-                    contentDescription = stringResource(R.string.lyrics_add_to_playlist),
-                    modifier = Modifier.size(toolbarLayout.iconSize)
-                )
-            }
 
             // 定时器对话框
             if (showSleepTimerDialog) {
@@ -1038,10 +1081,31 @@ fun LyricsScreen(
                     Spacer(Modifier.height(12.dp))
                 }
             }
-        }
+
+            if (showMoreOptions && currentSong != null) {
+                val queue by PlayerManager.currentQueueFlow.collectAsState()
+                val displayedQueue = remember(queue) { queue }
+                val nowPlayingViewModel: moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+                MoreOptionsSheet(
+                    viewModel = nowPlayingViewModel,
+                    originalSong = currentSong!!,
+                    queue = displayedQueue,
+                    displayedLyrics = lyrics,
+                    displayedTranslatedLyrics = translatedLyrics.orEmpty(),
+                    hasPhoneticLyrics = effectivePhoneticLyrics.isNotEmpty(),
+                    onDismiss = { showMoreOptions = false },
+                    onShowSongDetails = { detailSong = it },
+                    onEnterAlbum = onEnterAlbum,
+                    onNavigateUp = onExitNowPlaying,
+                    snackbarHostState = snackbarHostState,
+                    lyricFontScalePage = LyricFontScalePage.LYRICS,
+                    lyricFontScales = lyricFontScales,
+                    onLyricFontScaleChange = onLyricFontScaleChange
+                )
             }
         }
-        }
+    }
+}
 
         NeriOverlaySnackbarHost(hostState = snackbarHostState)
 

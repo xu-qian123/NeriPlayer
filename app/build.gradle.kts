@@ -2,6 +2,7 @@
 
 import com.android.build.api.variant.FilterConfiguration
 import org.gradle.api.tasks.testing.Test
+import java.util.Properties
 import java.util.UUID
 
 plugins {
@@ -21,11 +22,23 @@ val allowUnsignedRelease =
     (project.findProperty("allowUnsignedRelease") as String?)?.toBoolean() == true ||
         isGithubPullRequest ||
         isIdeBuild
-val releaseKeystorePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
-val releaseKeystoreFile = project.file(releaseKeystorePath)
-val releaseStorePassword = project.findProperty("KEYSTORE_PASSWORD") as String?
-val releaseKeyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
-val releaseKeyPassword = project.findProperty("KEY_PASSWORD") as String?
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+fun findSigningProperty(key: String): String? =
+    (project.findProperty(key) as String?) ?: localProperties.getProperty(key)
+
+val releaseKeystorePath = findSigningProperty("KEYSTORE_FILE") ?: "neri.jks"
+val releaseKeystoreFile = listOf(
+    project.file(releaseKeystorePath),
+    rootProject.file(releaseKeystorePath)
+).firstOrNull { it.exists() } ?: project.file(releaseKeystorePath)
+val releaseStorePassword = findSigningProperty("KEYSTORE_PASSWORD")
+val releaseKeyAlias = findSigningProperty("KEY_ALIAS") ?: "key0"
+val releaseKeyPassword = findSigningProperty("KEY_PASSWORD")
 val releaseSigningReady = releaseKeystoreFile.exists() &&
     !releaseStorePassword.isNullOrBlank() &&
     releaseKeyAlias.isNotBlank() &&

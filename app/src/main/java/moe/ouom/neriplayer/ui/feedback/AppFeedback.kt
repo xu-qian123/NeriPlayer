@@ -19,21 +19,25 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -42,10 +46,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,7 +63,7 @@ import moe.ouom.neriplayer.R
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-private const val StyledToastBackgroundColor = 0xFF323232.toInt()
+private const val StyledToastBackgroundColor = 0xFF000000.toInt()
 private const val StyledToastTextColor = Color.WHITE
 private const val SnackbarLayerZIndex = 50f
 private const val FeedbackDedupWindowMs = 1_800L
@@ -205,6 +212,23 @@ object AppFeedback {
     }
 
     fun showToast(
+        context: Context? = null,
+        message: String,
+        duration: SnackbarDuration = SnackbarDuration.Short
+    ) {
+        showInternal(
+            context = context,
+            message = message,
+            duration = duration,
+            preferSnackbar = true,
+            forceToast = false,
+            actionLabel = null,
+            withDismissAction = false,
+            onActionPerformed = null
+        )
+    }
+
+    fun showSystemToast(
         context: Context? = null,
         message: String,
         duration: SnackbarDuration = SnackbarDuration.Short
@@ -521,50 +545,108 @@ fun BoxScope.NeriOverlaySnackbarHost(
 @Composable
 private fun NeriSnackbar(snackbarData: SnackbarData) {
     val actionLabel = snackbarData.visuals.actionLabel
+    val withDismissAction = snackbarData.visuals.withDismissAction
+    val isInteractive = actionLabel != null || withDismissAction
+
+    if (isInteractive) {
+        NeriInteractiveSnackbar(snackbarData)
+    } else {
+        NeriRoundedToast(snackbarData.visuals.message)
+    }
+}
+
+@Composable
+private fun NeriRoundedToast(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = ComposeColor.Black,
+            contentColor = ComposeColor.White,
+            tonalElevation = 4.dp,
+            shadowElevation = 6.dp,
+            modifier = Modifier
+                .widthIn(min = 60.dp, max = 340.dp)
+                .testTag(NeriSnackbarTestTag)
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Normal,
+                    color = ComposeColor.White
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NeriInteractiveSnackbar(snackbarData: SnackbarData) {
+    val actionLabel = snackbarData.visuals.actionLabel
+    val withDismissAction = snackbarData.visuals.withDismissAction
     val messageMaxLines = resolveNeriSnackbarMessageMaxLines(
         actionLabel = actionLabel,
-        withDismissAction = snackbarData.visuals.withDismissAction
+        withDismissAction = withDismissAction
     )
-    Snackbar(
+    Box(
         modifier = Modifier
-            .padding(12.dp)
-            .testTag(NeriSnackbarTestTag),
-        action = if (actionLabel != null) {
-            {
-                TextButton(
-                    onClick = snackbarData::performAction,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = SnackbarDefaults.actionColor
-                    )
-                ) {
-                    Text(
-                        text = actionLabel,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        } else {
-            null
-        },
-        dismissAction = if (snackbarData.visuals.withDismissAction) {
-            {
-                IconButton(onClick = snackbarData::dismiss) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.cd_close)
-                    )
-                }
-            }
-        } else {
-            null
-        },
-        actionOnNewLine = false
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = snackbarData.visuals.message,
-            maxLines = messageMaxLines,
-            overflow = TextOverflow.Ellipsis
-        )
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = ComposeColor.Black,
+            contentColor = ComposeColor.White,
+            tonalElevation = 4.dp,
+            shadowElevation = 6.dp,
+            modifier = Modifier
+                .widthIn(max = 420.dp)
+                .testTag(NeriSnackbarTestTag)
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = snackbarData.visuals.message,
+                    style = MaterialTheme.typography.bodyMedium.copy(color = ComposeColor.White),
+                    modifier = Modifier.weight(1f),
+                    maxLines = messageMaxLines,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (actionLabel != null) {
+                    TextButton(
+                        onClick = snackbarData::performAction,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            text = actionLabel,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (withDismissAction) {
+                    IconButton(onClick = snackbarData::dismiss) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.cd_close),
+                            tint = ComposeColor.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

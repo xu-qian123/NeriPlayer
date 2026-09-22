@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -744,5 +745,14 @@ class PlayerLyricsProviderTest {
             coverUrl = null,
             mediaUri = "https://music.youtube.com/watch?v=video42"
         )
+    }
+
+    @Test
+    fun `resolveStoredLyricText preserves custom lyric text`() {
+        val resolved = resolveStoredLyricText(
+            currentLyric = "[00:01.00]自定义歌词",
+            legacyLyric = null
+        )
+        assertEquals("[00:01.00]自定义歌词", resolved)
     }
 }

@@ -58,6 +58,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.data.lyrics.CustomSongLyricsRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliArchiveCacheRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderCacheRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRepository
@@ -441,6 +442,8 @@ object AppContainer {
         }
     }
 
+    val customLyricsRepo by lazy { CustomSongLyricsRepository.getInstance(application) }
+
     fun initialize(app: Application) {
         this.application = app
         initialized = true
@@ -448,6 +451,7 @@ object AppContainer {
         warmLocalPlaylistRepository()
         warmBiliVideoSkipRepository()
         warmCoverUrlMapper()
+        warmCustomLyricsRepository()
         primeProxySetting()
         startCookieObserver()
         startYouTubeAuthObserver()
@@ -484,6 +488,16 @@ object AppContainer {
                 CoverUrlMapper.getInstance(application)
             }.onFailure { error ->
                 NPLogger.e("AppContainer", "Failed to preload cover URL mappings", error)
+            }
+        }
+    }
+
+    private fun warmCustomLyricsRepository() {
+        scope.launch {
+            runCatching {
+                CustomSongLyricsRepository.getInstance(application)
+            }.onFailure { error ->
+                NPLogger.e("AppContainer", "Failed to preload custom song lyrics", error)
             }
         }
     }

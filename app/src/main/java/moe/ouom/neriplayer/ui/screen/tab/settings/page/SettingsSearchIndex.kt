@@ -315,6 +315,7 @@ private val PersonalizationStartTargets = setOf(
 )
 
 private val PersonalizationHomeTargets = setOf(
+    "setting:home_sections_order",
     "setting:home_card_continue",
     "setting:home_card_trending",
     "setting:home_card_radar",
@@ -832,6 +833,7 @@ private val SettingSearchAliases = mapOf(
     "mobile_data_bili_audio_quality" to listOf("cellular bili", "哔哩哔哩流量", "bzhan liuliang"),
     "default_start_destination" to listOf("start page", "home", "tab", "qidongye"),
     "auto_show_keyboard" to listOf("keyboard", "input", "shurufa", "jianpan"),
+    "home_sections_order" to listOf("home sections", "paixu", "bankuai", "order", "shouye"),
     "home_card_continue" to listOf("continue", "recent", "jixu"),
     "home_card_trending" to listOf(
         "trending",

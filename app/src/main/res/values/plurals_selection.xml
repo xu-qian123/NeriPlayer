@@ -22,4 +22,7 @@
     <plurals name="download_delete_selected_confirm">
         <item quantity="other">确定要删除选中的 %d 首歌曲吗？此操作不可撤销。</item>
     </plurals>
+    <plurals name="netease_delete_selected_message">
+        <item quantity="other">将选中的 %d 首歌曲从网易云歌单中删除吗？此操作不可撤销。</item>
+    </plurals>
 </resources>

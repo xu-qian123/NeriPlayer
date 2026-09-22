@@ -208,29 +208,29 @@ class NowPlayingScreenTest {
     @Test
     fun `large main controls reduce spacing before overflowing narrow screens`() {
         val layout = resolveNowPlayingMainControlsLayout(
-            availableWidth = 280.dp,
+            availableWidth = 170.dp,
             secondaryButtonSize = 50.dp,
             primaryButtonSize = 60.dp,
             preferredSpacing = 24.dp
         )
 
         assertEquals(5.dp, layout.spacing)
-        assertEquals(280.dp, layout.secondaryButtonSize * 4 + layout.primaryButtonSize + layout.spacing * 4)
+        assertEquals(170.dp, layout.secondaryButtonSize * 2 + layout.primaryButtonSize + layout.spacing * 2)
     }
 
     @Test
     fun `main controls scale as a group when minimum spacing cannot fit`() {
         val layout = resolveNowPlayingMainControlsLayout(
-            availableWidth = 250.dp,
+            availableWidth = 150.dp,
             secondaryButtonSize = 50.dp,
             primaryButtonSize = 60.dp,
             preferredSpacing = 24.dp
         )
 
-        assertEquals(45f, layout.secondaryButtonSize.value, 0.001f)
-        assertEquals(54f, layout.primaryButtonSize.value, 0.001f)
+        assertEquals(44.375f, layout.secondaryButtonSize.value, 0.001f)
+        assertEquals(53.25f, layout.primaryButtonSize.value, 0.001f)
         assertEquals(4.dp, layout.spacing)
-        assertEquals(250.dp, layout.secondaryButtonSize * 4 + layout.primaryButtonSize + layout.spacing * 4)
+        assertEquals(150.dp, layout.secondaryButtonSize * 2 + layout.primaryButtonSize + layout.spacing * 2)
     }
 
     @Test

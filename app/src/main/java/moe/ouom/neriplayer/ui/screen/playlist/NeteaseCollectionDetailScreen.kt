@@ -43,6 +43,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,12 +72,14 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -129,6 +133,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -136,6 +142,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
+import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -155,9 +162,11 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -205,6 +214,19 @@ fun NeteasePlaylistDetailScreen(
         ui.header?.let { latestHeader = it }
     }
 
+    // 是否为登录用户自己创建的歌单（决定多选工具栏是否显示"从网易云删除"按钮）
+    var canDeleteRemoteTracks by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.header?.id, offlineMode) {
+        val header = ui.header
+        if (offlineMode || header == null || header.isAlbum || header.id <= 0L ||
+            isNeteaseRadarPlaylist(header.id)
+        ) {
+            canDeleteRemoteTracks = false
+        } else {
+            canDeleteRemoteTracks = vm.isCurrentPlaylistOwnedByUser()
+        }
+    }
+
     // 在 Screen 销毁时更新使用记录, 确保返回主页时卡片显示最新信息
     DisposableEffect(Unit) {
         onDispose {
@@ -230,7 +252,9 @@ fun NeteasePlaylistDetailScreen(
         onRetry = vm::retry,
         onBack = onBack,
         onSongClick = onSongClick,
-        offlineMode = offlineMode
+        offlineMode = offlineMode,
+        canDeleteRemoteTracks = canDeleteRemoteTracks,
+        onDeleteRemoteTracks = { ids -> vm.removeTracksFromCurrentPlaylist(ids) }
     )
 }
 
@@ -302,7 +326,9 @@ fun DetailScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    canDeleteRemoteTracks: Boolean = false,
+    onDeleteRemoteTracks: (suspend (List<Long>) -> Unit)? = null
 ) {
 
     val context = LocalContext.current
@@ -323,6 +349,11 @@ fun DetailScreen(
     val scope = rememberCoroutineScope()
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    // 歌单内临时排序（仅影响展示顺序；切歌单重置）
+    var sortMode by rememberSaveable(playlistId) {
+        mutableStateOf(PlaylistSortMode.DEFAULT)
+    }
+    var showSortSheet by remember { mutableStateOf(false) }
     var headerSearchFocused by remember { mutableStateOf(false) }
     var dockedSearchFocused by remember { mutableStateOf(false) }
     val searchInputState = rememberPlaylistSearchInputState(
@@ -341,6 +372,20 @@ fun DetailScreen(
     }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var isDeletingRemote by remember { mutableStateOf(false) }
+    // 登录用户即可往自己的网易云歌单添加歌曲（含收藏的歌单）
+    val neteaseCookies by AppContainer.neteaseCookieRepo.cookieFlow.collectAsState()
+    val canAddToNetease = !offlineMode && neteaseCookies.containsKey("MUSIC_U")
+    // 单曲级网易云操作（三点菜单入口）
+    var neteaseActionSong by remember { mutableStateOf<SongItem?>(null) }
+    var showNeteasePlaylistPicker by remember { mutableStateOf(false) }
+    var neteaseRemotePlaylists by remember {
+        mutableStateOf<List<NeteaseRemotePlaylist>>(emptyList())
+    }
+    var neteasePlaylistsLoading by remember { mutableStateOf(false) }
+    var neteasePlaylistsError by remember { mutableStateOf<String?>(null) }
+    var showNeteaseDeleteSongConfirm by remember { mutableStateOf(false) }
     fun toggleSelect(id: Long) {
         selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
     }
@@ -650,6 +695,19 @@ fun DetailScreen(
                                         contentDescription = stringResource(R.string.cd_export_playlist)
                                     )
                                 }
+                                if (canDeleteRemoteTracks && onDeleteRemoteTracks != null) {
+                                    HapticIconButton(
+                                        onClick = {
+                                            if (selectedIds.isNotEmpty()) showDeleteConfirmDialog = true
+                                        },
+                                        enabled = selectedIds.isNotEmpty()
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Delete,
+                                            contentDescription = stringResource(R.string.cd_delete_selected_from_netease)
+                                        )
+                                    }
+                                }
                                 HapticIconButton(
                                     onClick = {
                                         if (selectedIds.isNotEmpty()) {
@@ -702,7 +760,7 @@ fun DetailScreen(
                         query = searchQuery,
                         items = ui.tracks,
                         tokens = { song -> song.playlistSearchValues(context) }
-                    )
+                    ).applyPlaylistSort(sortMode)
                     val trackCount = ui.header?.trackCount ?: ui.tracks.size
                     val heroTitle = ui.header?.name ?: stringResource(R.string.playlist_title)
                     val heroSubtitle = if (ui.header?.isAlbum == true) {
@@ -803,7 +861,8 @@ fun DetailScreen(
                                             },
                                             onExportToLocalPlaylist = {
                                                 showExportAllSheet = true
-                                            }
+                                            },
+                                            onOpenSortSheet = { showSortSheet = true }
                                         )
                                 }
                             }
@@ -893,7 +952,40 @@ fun DetailScreen(
                                                     if (pos >= 0) onSongClick(full, pos)
                                                 },
                                                 snackbarHostState = snackbarHostState,
-                                                offlineMode = offlineMode
+                                                offlineMode = offlineMode,
+                                                onAddToNeteasePlaylist = if (canDeleteRemoteTracks || canAddToNetease) {
+                                                    {
+                                                        neteaseActionSong = item
+                                                        showNeteasePlaylistPicker = true
+                                                        neteaseRemotePlaylists = emptyList()
+                                                        neteasePlaylistsError = null
+                                                        neteasePlaylistsLoading = true
+                                                        scope.launch {
+                                                            runCatching {
+                                                                LocalPlaylistRepository.getInstance(context)
+                                                                    .fetchNeteaseRemotePlaylists(AppContainer.neteaseClient)
+                                                            }.onSuccess { playlists ->
+                                                                neteasePlaylistsLoading = false
+                                                                if (playlists.isEmpty()) {
+                                                                    neteasePlaylistsError = context.getString(
+                                                                        R.string.local_playlist_sync_netease_no_playlists
+                                                                    )
+                                                                }
+                                                                neteaseRemotePlaylists = playlists
+                                                            }.onFailure { error ->
+                                                                neteasePlaylistsLoading = false
+                                                                neteasePlaylistsError = error.message?.takeIf(String::isNotBlank)
+                                                                    ?: context.getString(R.string.local_playlist_sync_netease_load_failed)
+                                                            }
+                                                        }
+                                                    }
+                                                } else null,
+                                                onDeleteFromNeteasePlaylist = if (canDeleteRemoteTracks) {
+                                                    {
+                                                        neteaseActionSong = item
+                                                        showNeteaseDeleteSongConfirm = true
+                                                    }
+                                                } else null
                                             )
                                         }
                                     }
@@ -925,6 +1017,218 @@ fun DetailScreen(
                             }
                         }
                     }
+                }
+
+                // 单曲：添加到网易云歌单选择器（三点菜单入口）//
+                if (showNeteasePlaylistPicker) {
+                    val actionSong = neteaseActionSong
+                    AlertDialog(
+                        onDismissRequest = { showNeteasePlaylistPicker = false },
+                        title = {
+                            Text(stringResource(R.string.local_playlist_sync_netease_picker_title))
+                        },
+                        text = {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (neteasePlaylistsLoading) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.local_playlist_sync_netease_loading_playlists
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                neteasePlaylistsError?.let { message ->
+                                    Text(
+                                        text = message,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                                    itemsIndexed(
+                                        items = neteaseRemotePlaylists,
+                                        key = { _, playlist -> playlist.id }
+                                    ) { _, playlist ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable(enabled = !neteasePlaylistsLoading && actionSong != null) {
+                                                    if (actionSong == null) return@clickable
+                                                    showNeteasePlaylistPicker = false
+                                                    scope.launch(Dispatchers.IO) {
+                                                        val result = LocalPlaylistRepository.getInstance(context)
+                                                            .syncSongsToNeteasePlaylist(
+                                                                client = AppContainer.neteaseClient,
+                                                                targetPlaylistId = playlist.id,
+                                                                songs = listOf(actionSong)
+                                                            )
+                                                        withContext(Dispatchers.Main) {
+                                                            snackbarHostState.showNeriSnackbar(
+                                                                context.getString(
+                                                                    R.string.local_playlist_sync_netease_target,
+                                                                    playlist.name
+                                                                ) + " " + (result.message ?: context.getString(
+                                                                    R.string.netease_add_song_done
+                                                                ))
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                .padding(horizontal = 4.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                                contentDescription = null
+                                            )
+                                            Text(
+                                                text = playlist.name,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            HapticTextButton(onClick = { showNeteasePlaylistPicker = false }) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        }
+                    )
+                }
+
+                // 单曲：从网易云歌单删除确认弹窗（三点菜单入口）//
+                if (showNeteaseDeleteSongConfirm) {
+                    val actionSong = neteaseActionSong
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isDeletingRemote) showNeteaseDeleteSongConfirm = false
+                        },
+                        confirmButton = {
+                            HapticTextButton(
+                                enabled = !isDeletingRemote && actionSong != null,
+                                onClick = {
+                                    val song = actionSong ?: return@HapticTextButton
+                                    showNeteaseDeleteSongConfirm = false
+                                    neteaseActionSong = null
+                                    scope.launch {
+                                        try {
+                                            isDeletingRemote = true
+                                            onDeleteRemoteTracks?.invoke(listOf(song.id))
+                                            snackbarHostState.showNeriSnackbar(
+                                                context.getString(R.string.netease_delete_selected_success)
+                                            )
+                                        } catch (e: Exception) {
+                                            NPLogger.w(
+                                                "NERI-NeteaseCollection",
+                                                "delete single track failed: ${e.message}"
+                                            )
+                                            snackbarHostState.showNeriSnackbar(
+                                                context.getString(R.string.netease_delete_selected_failed)
+                                            )
+                                        } finally {
+                                            isDeletingRemote = false
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    stringResource(R.string.action_delete),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        },
+                        dismissButton = {
+                            HapticTextButton(
+                                enabled = !isDeletingRemote,
+                                onClick = {
+                                    showNeteaseDeleteSongConfirm = false
+                                    neteaseActionSong = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        },
+                        title = { Text(stringResource(R.string.netease_delete_selected_title)) },
+                        text = {
+                            Text(stringResource(R.string.netease_delete_single_song_message))
+                        }
+                    )
+                }
+
+                // 删除选中歌曲确认弹窗（仅歌单创建者可见入口）//
+                if (showDeleteConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isDeletingRemote) showDeleteConfirmDialog = false
+                        },
+                        confirmButton = {
+                            HapticTextButton(
+                                enabled = !isDeletingRemote,
+                                onClick = {
+                                    val idsToRemove = ui.tracks
+                                        .filter { it.id in selectedIds }
+                                        .map { it.id }
+                                    showDeleteConfirmDialog = false
+                                    exitSelection()
+                                    scope.launch {
+                                        try {
+                                            isDeletingRemote = true
+                                            onDeleteRemoteTracks?.invoke(idsToRemove)
+                                            snackbarHostState.showNeriSnackbar(
+                                                context.getString(
+                                                    R.string.netease_delete_selected_success
+                                                )
+                                            )
+                                        } catch (e: Exception) {
+                                            NPLogger.w(
+                                                "NERI-NeteaseCollection",
+                                                "delete selected tracks failed: ${e.message}"
+                                            )
+                                            snackbarHostState.showNeriSnackbar(
+                                                context.getString(
+                                                    R.string.netease_delete_selected_failed
+                                                )
+                                            )
+                                        } finally {
+                                            isDeletingRemote = false
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    stringResource(R.string.action_delete),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        },
+                        dismissButton = {
+                            HapticTextButton(
+                                enabled = !isDeletingRemote,
+                                onClick = { showDeleteConfirmDialog = false }
+                            ) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        },
+                        title = { Text(stringResource(R.string.netease_delete_selected_title)) },
+                        text = {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.netease_delete_selected_message,
+                                    selectedIds.size,
+                                    selectedIds.size
+                                )
+                            )
+                        }
+                    )
                 }
 
                 // 导出面板 //
@@ -1020,6 +1324,14 @@ fun DetailScreen(
                         }
                     )
                 }
+
+                if (showSortSheet) {
+                    PlaylistSortSheet(
+                        currentMode = sortMode,
+                        onSelectMode = { sortMode = it },
+                        onDismissRequest = { showSortSheet = false }
+                    )
+                }
                 // 允许返回键优先退出多选
                 BackHandler(enabled = selectionMode) { exitSelection() }
 
@@ -1088,7 +1400,9 @@ private fun SongRow(
     onClick: () -> Unit,
     indexWidth: Dp = 48.dp,
     snackbarHostState: SnackbarHostState,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    onAddToNeteasePlaylist: (() -> Unit)? = null,
+    onDeleteFromNeteasePlaylist: (() -> Unit)? = null
 ) {
     val current by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
@@ -1280,6 +1594,42 @@ private fun SongRow(
                             showMoreMenu = false
                         }
                     )
+                    if (onAddToNeteasePlaylist != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.netease_add_song_to_playlist)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                showMoreMenu = false
+                                onAddToNeteasePlaylist.invoke()
+                            }
+                        )
+                    }
+                    if (onDeleteFromNeteasePlaylist != null) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(R.string.netease_delete_song_from_playlist),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                showMoreMenu = false
+                                onDeleteFromNeteasePlaylist.invoke()
+                            }
+                        )
+                    }
                 }
             }
         }

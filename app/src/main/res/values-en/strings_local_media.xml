@@ -47,7 +47,10 @@
     <string name="local_playlist_sync_netease_partial_confirm_title">Some songs cannot sync</string>
     <string name="local_playlist_sync_netease_empty">Favorites are empty. Nothing to sync.</string>
     <string name="local_playlist_sync_netease_no_supported">No songs available to sync.</string>
-    <string name="local_playlist_sync_netease_all_synced">Already synced to NetEase. Nothing to update.</string>
+    <string name="local_playlist_sync_netease_all_synced">Already synced to NetEase, no need to repeat</string>
+    <string name="local_playlist_sync_netease_two_way">Two-way sync with NetEase</string>
+    <string name="local_playlist_sync_netease_two_way_remote_only">Sync complete. Remote has extra liked songs not imported locally.</string>
+    <string name="local_playlist_sync_netease_two_way_summary">Sync complete: added %1$d to liked, %2$d already on both%3$s</string>
     <string name="local_playlist_sync_selected">Sync selected (%d)</string>
     <string name="local_playlist_sync_search">Search syncable songs</string>
     <string name="local_playlist_sync_empty">No songs available to sync.</string>

@@ -1943,6 +1943,16 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 return@runSongMetadataMutation
             }
 
+            if (AppContainer.isInitialized()) {
+                AppContainer.customLyricsRepo.saveCustomMetadata(
+                    song = updatedSong,
+                    customName = normalizedCustomName,
+                    customArtist = normalizedCustomArtist,
+                    restoreName = restoreBaseName,
+                    restoreArtist = restoreBaseArtist
+                )
+            }
+
             updateSongInAllPlaces(
                 originalSong = originalSong,
                 updatedSong = updatedSong,
@@ -2013,6 +2023,9 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
                     triggerSync = true
                 )
             }
+        }
+        if (AppContainer.isInitialized()) {
+            AppContainer.customLyricsRepo.saveUserLyricOffset(latestSong, newOffset)
         }
     }
 
@@ -2154,6 +2167,18 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
             playlists = localRepo.playlists.value,
             localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
         )
+        val currentCustom = AppContainer.customLyricsRepo.getCustomLyrics(latestSong.stableKey())
+        if (newLyrics == null && currentCustom?.translatedLyric == null) {
+            AppContainer.customLyricsRepo.clearCustomLyrics(latestSong)
+        } else if (newLyrics == latestSong.originalLyric && latestSong.originalLyric != null && currentCustom?.translatedLyric == null) {
+            AppContainer.customLyricsRepo.clearCustomLyrics(latestSong)
+        } else {
+            AppContainer.customLyricsRepo.saveCustomLyrics(
+                song = latestSong,
+                lyric = newLyrics,
+                translatedLyric = currentCustom?.translatedLyric ?: latestSong.matchedTranslatedLyric
+            )
+        }
     }
 
     persistState()
@@ -2203,6 +2228,18 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
             playlists = localRepo.playlists.value,
             localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
         )
+        val currentCustom = AppContainer.customLyricsRepo.getCustomLyrics(latestSong.stableKey())
+        if (newTranslatedLyrics == null && currentCustom?.lyric == null) {
+            AppContainer.customLyricsRepo.clearCustomLyrics(latestSong)
+        } else if (newTranslatedLyrics == latestSong.originalTranslatedLyric && latestSong.originalTranslatedLyric != null && currentCustom?.lyric == null) {
+            AppContainer.customLyricsRepo.clearCustomLyrics(latestSong)
+        } else {
+            AppContainer.customLyricsRepo.saveCustomLyrics(
+                song = latestSong,
+                lyric = currentCustom?.lyric ?: latestSong.matchedLyric,
+                translatedLyric = newTranslatedLyrics
+            )
+        }
     }
 
     persistState()
@@ -2276,6 +2313,17 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             playlists = localRepo.playlists.value,
             localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
         )
+        val isRestoringOriginal = (newLyrics == latestSong.originalLyric && latestSong.originalLyric != null) &&
+            (newTranslatedLyrics == latestSong.originalTranslatedLyric || latestSong.originalTranslatedLyric == null)
+        if (isRestoringOriginal || (newLyrics == null && newTranslatedLyrics == null)) {
+            AppContainer.customLyricsRepo.clearCustomLyrics(latestSong)
+        } else {
+            AppContainer.customLyricsRepo.saveCustomLyrics(
+                song = latestSong,
+                lyric = newLyrics,
+                translatedLyric = newTranslatedLyrics
+            )
+        }
         NPLogger.d(
             "PlayerManager",
             "歌词更新已同步到本地仓库: id=${latestSong.id}, lyric=${latestSong.matchedLyric?.take(32)}, translated=${latestSong.matchedTranslatedLyric?.take(32)}"
@@ -2344,6 +2392,22 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
         playlists = localRepo.playlists.value,
         localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
     )
+    if (updatedSong.matchedLyric != null || updatedSong.matchedTranslatedLyric != null) {
+        AppContainer.customLyricsRepo.saveCustomLyrics(
+            song = updatedSong,
+            lyric = updatedSong.matchedLyric,
+            translatedLyric = updatedSong.matchedTranslatedLyric,
+            matchedSource = updatedSong.matchedLyricSource,
+            matchedSongId = updatedSong.matchedSongId
+        )
+    }
+    if (!updatedSong.customName.isNullOrBlank() || !updatedSong.customArtist.isNullOrBlank()) {
+        AppContainer.customLyricsRepo.saveCustomMetadata(
+            song = updatedSong,
+            customName = updatedSong.customName,
+            customArtist = updatedSong.customArtist
+        )
+    }
 
     persistState()
 }

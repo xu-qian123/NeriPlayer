@@ -161,7 +161,10 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import kotlin.math.ceil
-import kotlin.math.min
+import moe.ouom.neriplayer.data.settings.orderNeteaseHomeSections
+import moe.ouom.neriplayer.data.settings.parseNeteaseHomeSectionOrder
+import moe.ouom.neriplayer.data.settings.toHomeSectionId
+import java.time.LocalTime
 import java.util.Locale
 
 private const val HomeContinueHorizontalPaddingDp = 8f
@@ -221,6 +224,19 @@ private fun homeYtMusicHomeItemScrollKey(
 ): String {
     val stableId = item.browseId.ifBlank { item.videoId }.ifBlank { item.title }
     return "$shelfKey:item:$itemIndex:${stableId.hashCode()}"
+}
+
+@Composable
+internal fun rememberGreetingTitle(): String {
+    val morning = stringResource(R.string.home_greeting_morning)
+    val afternoon = stringResource(R.string.home_greeting_afternoon)
+    val evening = stringResource(R.string.home_greeting_evening)
+    val hour = remember { LocalTime.now().hour }
+    return when {
+        hour in 5..11 -> morning
+        hour in 12..17 -> afternoon
+        else -> evening
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -309,14 +325,20 @@ fun HomeScreen(
         }
     }
 
-    val titleOptions = listOf(
-        stringResource(R.string.app_name),
-        stringResource(R.string.home_title_brand_loud),
-        stringResource(R.string.home_title_brand_wave),
-        stringResource(R.string.home_title_brand_call)
-    ).distinct()
-    val titleSeed = rememberSaveable { (0..Int.MAX_VALUE).random() }
-    val appBarTitle = titleOptions[titleSeed % titleOptions.size]
+    val appBarTitle = rememberGreetingTitle()
+    val homeSectionsOrderRaw by AppContainer.settingsRepo.homeSectionsOrderFlow
+        .collectAsStateWithLifecycle(initialValue = null)
+    val orderedNeteaseSongSections = remember(
+        homeSectionsOrderRaw,
+        ui.radarSongSections,
+        ui.trendingSongSections
+    ) {
+        orderNeteaseHomeSections(
+            radarSongSections = ui.radarSongSections,
+            trendingSongSections = ui.trendingSongSections,
+            persistedOrder = parseNeteaseHomeSectionOrder(homeSectionsOrderRaw)
+        ) { it.source.toHomeSectionId() }
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
         canScroll = {
@@ -711,12 +733,14 @@ fun HomeScreen(
                                 }
                             }
                         } else {
-                            if (showNeteaseRadar) {
-                                ui.radarSongSections
-                                    .filter { it.source == NeteaseHomeSongSource.PERSONAL_RADAR }
-                                    .forEach { sectionState ->
+                            orderedNeteaseSongSections.forEach { sectionState ->
+                                val isRadarGroup = sectionState.source == NeteaseHomeSongSource.PERSONAL_RADAR ||
+                                    sectionState.source == NeteaseHomeSongSource.DAILY_RECOMMEND ||
+                                    sectionState.source == NeteaseHomeSongSource.PRIVATE_FM
+                                val shouldShow = if (isRadarGroup) showNeteaseRadar else showNeteaseTrending
+                                if (shouldShow) {
                                     val sectionKey = homeNeteaseSongSectionKey(
-                                        group = "radar",
+                                        group = if (isRadarGroup) "radar" else "trending",
                                         source = sectionState.source
                                     )
                                     addNeteaseSongSection(
@@ -732,7 +756,9 @@ fun HomeScreen(
                                         offlineMode = offlineMode
                                     )
                                 }
+                            }
 
+                            if (showNeteaseRadar) {
                                 val radarPlaylistState = ui.radarPlaylists
                                 item(
                                     key = registerGridItemKey(
@@ -769,48 +795,6 @@ fun HomeScreen(
                                             offlineMode = offlineMode
                                         )
                                     }
-                                }
-
-                                ui.radarSongSections
-                                    .filter { it.source != NeteaseHomeSongSource.PERSONAL_RADAR }
-                                    .forEach { sectionState ->
-                                        val sectionKey = homeNeteaseSongSectionKey(
-                                            group = "radar",
-                                            source = sectionState.source
-                                        )
-                                        addNeteaseSongSection(
-                                            sectionKey = sectionKey,
-                                            registerKey = ::registerGridItemKey,
-                                            sectionState = sectionState,
-                                            icon = neteaseSongSectionIcon(sectionState.source),
-                                            loadingText = homeLoadingText,
-                                            onSongClick = onSongClick,
-                                            favoriteSongs = favoriteSongs,
-                                            onFavoriteToggle = ::toggleHomeSongFavorite,
-                                            onShowSnackbar = showHomeSnackbar,
-                                            offlineMode = offlineMode
-                                        )
-                                    }
-                            }
-
-                            if (showNeteaseTrending) {
-                                ui.trendingSongSections.forEach { sectionState ->
-                                    val sectionKey = homeNeteaseSongSectionKey(
-                                        group = "trending",
-                                        source = sectionState.source
-                                    )
-                                    addNeteaseSongSection(
-                                        sectionKey = sectionKey,
-                                        registerKey = ::registerGridItemKey,
-                                        sectionState = sectionState,
-                                        icon = neteaseSongSectionIcon(sectionState.source),
-                                        loadingText = homeLoadingText,
-                                        onSongClick = onSongClick,
-                                        favoriteSongs = favoriteSongs,
-                                        onFavoriteToggle = ::toggleHomeSongFavorite,
-                                        onShowSnackbar = showHomeSnackbar,
-                                        offlineMode = offlineMode
-                                    )
                                 }
                             }
 
@@ -2097,7 +2081,7 @@ private fun ResponsiveSongPagerList(
             .padding(horizontal = 8.dp)
     ) { page ->
         val start = page * perPage
-        val end = min(start + perPage, songs.size)
+        val end = minOf(start + perPage, songs.size)
 
         Row(
             modifier = Modifier.fillMaxWidth(),

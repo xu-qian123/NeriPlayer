@@ -98,6 +98,12 @@ class SettingsRepository(private val context: Context) {
     val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingToolbarDockEnabledFlow
 
+    val nowPlayingToolbarButtonsFlow: Flow<String> =
+        autoSettingsRepository.nowPlayingToolbarButtonsFlow
+
+    val homeSectionsOrderFlow: Flow<String> =
+        autoSettingsRepository.homeSectionsOrderFlow
+
     val playbackControlLayoutPreferencesFlow: Flow<PlaybackControlLayoutPreferences> =
         dataStoreSettingFlow { preferences ->
             resolvePlaybackControlLayoutPreferences(
@@ -623,6 +629,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setNowPlayingToolbarDockEnabled(enabled: Boolean) {
         autoSettingsRepository.setNowPlayingToolbarDockEnabled(enabled)
+    }
+
+    suspend fun setNowPlayingToolbarButtons(buttons: String) {
+        autoSettingsRepository.setNowPlayingToolbarButtons(buttons)
+    }
+
+    suspend fun setHomeSectionsOrder(order: String) {
+        autoSettingsRepository.setHomeSectionsOrder(order)
     }
 
     suspend fun setNowPlayingKeepScreenOn(enabled: Boolean) {

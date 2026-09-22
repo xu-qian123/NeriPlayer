@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
@@ -694,7 +695,12 @@ internal fun PlayerManager.playPlaylistImpl(
             songKeys = songs.mapTo(LinkedHashSet(songs.size)) { song -> song.stableKey() }
         )
     }
-    currentPlaylist = songs
+    val hydratedSongs = if (AppContainer.isInitialized()) {
+        songs.map { song -> AppContainer.customLyricsRepo.hydrateSong(song) ?: song }
+    } else {
+        songs
+    }
+    currentPlaylist = hydratedSongs
     _currentQueueFlow.value = currentPlaylist
     currentIndex = startIndex.coerceIn(0, songs.lastIndex)
 
@@ -2043,6 +2049,34 @@ internal fun PlayerManager.setShuffleImpl(
         repeatMode = repeatModeSetting,
         shuffleEnabled = enabled
     )
+}
+
+internal fun PlayerManager.setPlaybackModeImpl(
+    repeatMode: Int,
+    shuffle: Boolean,
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+) {
+    setShuffleImpl(shuffle, commandSource)
+    val normalizedRepeatMode = when (repeatMode) {
+        Player.REPEAT_MODE_OFF,
+        Player.REPEAT_MODE_ALL,
+        Player.REPEAT_MODE_ONE -> repeatMode
+        else -> Player.REPEAT_MODE_ALL
+    }
+    if (repeatModeSetting != normalizedRepeatMode) {
+        repeatModeSetting = normalizedRepeatMode
+        if (isPlayerInitialized()) {
+            syncExoRepeatMode()
+        }
+        _repeatModeFlow.value = normalizedRepeatMode
+        scheduleStatePersist()
+        emitPlaybackCommand(
+            type = "PLAYBACK_MODE",
+            source = commandSource,
+            repeatMode = normalizedRepeatMode,
+            shuffleEnabled = shuffle
+        )
+    }
 }
 
 internal fun PlayerManager.applyListenTogetherPlaybackModeImpl(

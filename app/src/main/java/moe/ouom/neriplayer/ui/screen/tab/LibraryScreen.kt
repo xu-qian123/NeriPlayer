@@ -27,6 +27,24 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -60,6 +78,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.History
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
@@ -79,6 +98,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.TopAppBarDefaults
@@ -96,15 +117,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -187,7 +214,6 @@ private const val LOCAL_CATEGORY_ARTIST = 1
 private const val LIBRARY_UI_PREFS = "library_ui_preferences"
 private const val KEY_LOCAL_ARTIST_SORT_MODE = "local_artist_sort_mode"
 private val LibraryPrimaryTabShape = RoundedCornerShape(20.dp)
-private val LibrarySearchFieldShape = RoundedCornerShape(16.dp)
 
 private val HotPlaylistPeriods = listOf(
     PlaybackStatsPeriod.WEEK,
@@ -584,18 +610,33 @@ private fun LibraryMainTabs(
         ) {
             PrimaryScrollableTabRow(
                 selectedTabIndex = selectedTabIndex,
-                edgePadding = 8.dp,
+                edgePadding = 0.dp,
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.primary,
+                divider = {},
+                indicator = {
+                    TabRowDefaults.PrimaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(selectedTabIndex),
+                        width = 24.dp,
+                        height = 3.dp,
+                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                    )
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 tabs.forEachIndexed { index, tab ->
+                    val selected = selectedTabIndex == index
                     Tab(
-                        selected = selectedTabIndex == index,
+                        selected = selected,
                         onClick = { onTabSelected(index) },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
                         unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        text = { Text(stringResource(tab.labelResId)) }
+                        text = {
+                            Text(
+                                text = stringResource(tab.labelResId),
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     )
                 }
             }
@@ -891,15 +932,11 @@ private fun BiliPlaylistList(
     ) {
         val cardShape = RoundedCornerShape(12.dp)
         item(key = "bili_playlist_search") {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                placeholder = { Text(stringResource(R.string.library_bili_search_hint)) },
-                singleLine = true,
-                shape = LibrarySearchFieldShape
+            LibraryInlineSearchField(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholderResId = R.string.library_bili_search_hint,
+                horizontalPadding = 8.dp
             )
         }
         if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
@@ -1874,24 +1911,12 @@ private fun LocalArtistSearchAndSortRow(
             .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
+        LibraryInlineSearchField(
+            query = query,
+            onQueryChange = onQueryChange,
+            placeholderResId = R.string.library_local_artist_search_hint,
             modifier = Modifier.weight(1f),
-            placeholder = { Text(stringResource(R.string.library_local_artist_search_hint)) },
-            singleLine = true,
-            shape = LibrarySearchFieldShape,
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    HapticIconButton(onClick = { onQueryChange("") }) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.action_clear)
-                        )
-                    }
-                }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+            horizontalPadding = 0.dp
         )
         Box {
             HapticIconButton(onClick = { menuExpanded = true }) {
@@ -1957,88 +1982,222 @@ private fun LocalArtistSortMenuItem(
     )
 }
 
+private data class LibraryCategorySegmentItem(
+    val label: String,
+    val icon: ImageVector
+)
+
 @Composable
-private fun LocalCategoryTabs(
-    selectedCategory: Int,
-    onPlaylistSelected: () -> Unit,
-    onArtistSelected: () -> Unit
+private fun LibraryCategorySegmentedControl(
+    items: List<LibraryCategorySegmentItem>,
+    selectedIndex: Int,
+    onItemSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
+    val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
+    val indicatorColor = if (isDark) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+    }
+
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.ScreenTopTab,
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(22.dp)),
+        shape = RoundedCornerShape(22.dp),
+        fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+        tintColor = MaterialTheme.colorScheme.surfaceVariant
     ) {
-        AdvancedGlassSurface(
-            role = AdvancedGlassRole.ScreenTopTab,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-            tintColor = MaterialTheme.colorScheme.surfaceVariant
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .padding(3.dp)
         ) {
-            PrimaryTabRow(
-                selectedTabIndex = selectedCategory,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedCategory == LOCAL_CATEGORY_PLAYLIST,
-                    onClick = onPlaylistSelected,
-                    text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
-                    icon = {
+            val tabWidth = maxWidth / items.size.coerceAtLeast(1)
+            val indicatorOffset by animateDpAsState(
+                targetValue = tabWidth * selectedIndex,
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                label = "pill_indicator"
+            )
+
+            Box(
+                modifier = Modifier
+                    .offset(x = indicatorOffset)
+                    .width(tabWidth)
+                    .fillMaxHeight()
+                    .shadow(elevation = 1.5.dp, shape = RoundedCornerShape(19.dp), clip = false)
+                    .background(
+                        color = indicatorColor,
+                        shape = RoundedCornerShape(19.dp)
+                    )
+            )
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                items.forEachIndexed { index, item ->
+                    val selected = selectedIndex == index
+                    val contentColor by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        label = "tab_color"
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(19.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                if (!selected) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onItemSelected(index)
+                                }
+                            },
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = null
+                            imageVector = item.icon,
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = item.label,
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
-                )
-                Tab(
-                    selected = selectedCategory == LOCAL_CATEGORY_ARTIST,
-                    onClick = onArtistSelected,
-                    text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = null
-                        )
-                    }
-                )
+                }
             }
         }
     }
 }
 
 @Composable
+private fun LocalCategoryTabs(
+    selectedCategory: Int,
+    onPlaylistSelected: () -> Unit,
+    onArtistSelected: () -> Unit
+) {
+    LibraryCategorySegmentedControl(
+        items = listOf(
+            LibraryCategorySegmentItem(
+                label = stringResource(R.string.library_favorite_tab_playlists),
+                icon = Icons.AutoMirrored.Filled.QueueMusic
+            ),
+            LibraryCategorySegmentItem(
+                label = stringResource(R.string.library_favorite_tab_artists),
+                icon = Icons.Filled.AccountCircle
+            )
+        ),
+        selectedIndex = if (selectedCategory == LOCAL_CATEGORY_ARTIST) 1 else 0,
+        onItemSelected = { index ->
+            if (index == 1) onArtistSelected() else onPlaylistSelected()
+        }
+    )
+}
+
+@Composable
 private fun LibraryInlineSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
-    placeholderResId: Int
+    placeholderResId: Int,
+    modifier: Modifier = Modifier,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+    val borderColor = if (isDark) {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    }
+
+    Box(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        placeholder = { Text(stringResource(placeholderResId)) },
-        singleLine = true,
-        shape = LibrarySearchFieldShape,
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                HapticIconButton(onClick = { onQueryChange("") }) {
+            .padding(horizontal = horizontalPadding, vertical = 4.dp)
+            .height(48.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(bgColor)
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.size(18.dp)
+            )
+
+            Spacer(Modifier.width(10.dp))
+
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.weight(1f),
+                decorationBox = { innerTextField ->
+                    if (query.isEmpty()) {
+                        Text(
+                            text = stringResource(placeholderResId),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    innerTextField()
+                }
+            )
+
+            AnimatedVisibility(
+                visible = query.isNotEmpty(),
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                HapticIconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(28.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.action_clear)
+                        contentDescription = stringResource(R.string.action_clear),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
-    )
+        }
+    }
 }
 
 @Composable
@@ -2345,53 +2504,22 @@ private fun NeteaseCategoryTabs(
     selectedCategory: Int,
     onCategoryChange: (Int) -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
+    LibraryCategorySegmentedControl(
+        items = listOf(
+            LibraryCategorySegmentItem(
+                label = stringResource(R.string.library_netease_tab_playlists),
+                icon = Icons.AutoMirrored.Filled.QueueMusic
+            ),
+            LibraryCategorySegmentItem(
+                label = stringResource(R.string.library_netease_tab_albums),
+                icon = Icons.Filled.Album
+            )
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-    ) {
-        AdvancedGlassSurface(
-            role = AdvancedGlassRole.ScreenTopTab,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-            tintColor = MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            PrimaryTabRow(
-                selectedTabIndex = selectedCategory,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedCategory == NETEASE_CATEGORY_PLAYLIST,
-                    onClick = { onCategoryChange(NETEASE_CATEGORY_PLAYLIST) },
-                    text = { Text(stringResource(R.string.library_netease_tab_playlists)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = null
-                        )
-                    }
-                )
-                Tab(
-                    selected = selectedCategory == NETEASE_CATEGORY_ALBUM,
-                    onClick = { onCategoryChange(NETEASE_CATEGORY_ALBUM) },
-                    text = { Text(stringResource(R.string.library_netease_tab_albums)) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.Album,
-                            contentDescription = null
-                        )
-                    }
-                )
-            }
+        selectedIndex = if (selectedCategory == NETEASE_CATEGORY_ALBUM) 1 else 0,
+        onItemSelected = { index ->
+            onCategoryChange(if (index == 1) NETEASE_CATEGORY_ALBUM else NETEASE_CATEGORY_PLAYLIST)
         }
-    }
+    )
 }
 
 @Composable
@@ -2564,15 +2692,11 @@ private fun NeteasePlaylistList(
             )
         }
         item(key = "netease_playlist_search") {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
-                singleLine = true,
-                shape = LibrarySearchFieldShape
+            LibraryInlineSearchField(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholderResId = R.string.library_netease_search_hint,
+                horizontalPadding = 8.dp
             )
         }
         if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
@@ -2723,15 +2847,11 @@ private fun NeteaseAlbumList(
             )
         }
         item(key = "netease_album_search") {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
-                singleLine = true,
-                shape = LibrarySearchFieldShape
+            LibraryInlineSearchField(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholderResId = R.string.library_netease_search_hint,
+                horizontalPadding = 8.dp
             )
         }
         if (playlists.isNotEmpty() && filteredAlbums.isEmpty()) {
@@ -2960,79 +3080,38 @@ private fun FavoritePlaylistList(
         val cardShape = RoundedCornerShape(12.dp)
         val displayedFavorites = filterFavoritePlaylists(reorderableFavorites, favoriteSearchQuery)
         item(key = "favorite_category_tabs") {
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
+            LibraryCategorySegmentedControl(
+                items = listOf(
+                    LibraryCategorySegmentItem(
+                        label = stringResource(R.string.library_favorite_tab_playlists),
+                        icon = Icons.AutoMirrored.Filled.QueueMusic
+                    ),
+                    LibraryCategorySegmentItem(
+                        label = stringResource(R.string.library_favorite_tab_artists),
+                        icon = Icons.Filled.AccountCircle
+                    ),
+                    LibraryCategorySegmentItem(
+                        label = stringResource(R.string.library_favorite_tab_hot),
+                        icon = Icons.Outlined.Bolt
+                    )
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-            ) {
-                AdvancedGlassSurface(
-                    role = AdvancedGlassRole.ScreenTopTab,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                    tintColor = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    PrimaryTabRow(
-                        selectedTabIndex = selectedFavoriteCategory,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ) {
-                        Tab(
-                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_PLAYLIST,
-                            onClick = {
-                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_PLAYLIST) {
-                                    selectedFavoriteCategory = FAVORITE_CATEGORY_PLAYLIST
-                                    exitEditMode()
-                                }
-                            },
-                            text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = null
-                                )
-                            }
-                        )
-                        Tab(
-                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST,
-                            onClick = {
-                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_ARTIST) {
-                                    selectedFavoriteCategory = FAVORITE_CATEGORY_ARTIST
-                                    exitEditMode()
-                                }
-                            },
-                            text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Filled.AccountCircle,
-                                    contentDescription = null
-                                )
-                            }
-                        )
-                        Tab(
-                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_HOT,
-                            onClick = {
-                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_HOT) {
-                                    selectedFavoriteCategory = FAVORITE_CATEGORY_HOT
-                                    exitEditMode()
-                                }
-                            },
-                            text = { Text(stringResource(R.string.library_favorite_tab_hot)) },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Bolt,
-                                    contentDescription = null
-                                )
-                            }
-                        )
+                selectedIndex = when (selectedFavoriteCategory) {
+                    FAVORITE_CATEGORY_ARTIST -> 1
+                    FAVORITE_CATEGORY_HOT -> 2
+                    else -> 0
+                },
+                onItemSelected = { index ->
+                    val newCategory = when (index) {
+                        1 -> FAVORITE_CATEGORY_ARTIST
+                        2 -> FAVORITE_CATEGORY_HOT
+                        else -> FAVORITE_CATEGORY_PLAYLIST
+                    }
+                    if (selectedFavoriteCategory != newCategory) {
+                        selectedFavoriteCategory = newCategory
+                        exitEditMode()
                     }
                 }
-            }
+            )
         }
         if (!sortMode && !isHotCategory) {
             item(key = "favorite_search") {

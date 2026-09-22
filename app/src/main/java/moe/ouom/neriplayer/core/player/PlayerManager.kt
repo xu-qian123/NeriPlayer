@@ -161,6 +161,7 @@ import moe.ouom.neriplayer.core.player.playback.previousImpl
 import moe.ouom.neriplayer.core.player.playback.restoreAudioRouteMuteImpl
 import moe.ouom.neriplayer.core.player.playback.seekToImpl
 import moe.ouom.neriplayer.core.player.playback.setShuffleImpl
+import moe.ouom.neriplayer.core.player.playback.setPlaybackModeImpl
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackPreservingQueueImpl
 import moe.ouom.neriplayer.core.player.playback.stopProgressUpdatesImpl
 import moe.ouom.neriplayer.core.player.playback.togglePlayPauseImpl
@@ -721,8 +722,13 @@ object PlayerManager {
     }
 
     internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
+        val hydratedSong = if (AppContainer.isInitialized()) {
+            AppContainer.customLyricsRepo.hydrateSong(song)
+        } else {
+            song
+        }
         val previousSong = _currentSongFlow.value
-        if (previousSong != null && !previousSong.sameIdentityAs(song)) {
+        if (previousSong != null && !previousSong.sameIdentityAs(hydratedSong)) {
             persistLongFormPlaybackProgress(
                 song = previousSong,
                 positionMs = _playbackPositionMs.value,
@@ -730,19 +736,19 @@ object PlayerManager {
             )
             lastLongFormPlaybackProgressPersistAtMs = 0L
         }
-        _currentSongFlow.value = song
-        _playbackDurationMs.value = song?.durationMs?.coerceAtLeast(0L) ?: 0L
-        if (previousSong === song) return
+        _currentSongFlow.value = hydratedSong
+        _playbackDurationMs.value = hydratedSong?.durationMs?.coerceAtLeast(0L) ?: 0L
+        if (previousSong === hydratedSong) return
         if (syncLyricon) {
-            syncLyriconSong(song)
+            syncLyriconSong(hydratedSong)
         }
-        syncExternalBluetoothLyrics(song)
+        syncExternalBluetoothLyrics(hydratedSong)
         persistPlaybackStatsSnapshotAsync(
             synchronized(playbackStatsTracker) {
                 playbackStatsTracker.onSongChanged(
-                    song = song,
+                    song = hydratedSong,
                     localPlaylistId = localPlaylistPlaybackSource
-                        ?.takeIf { source -> source.contains(song) }
+                        ?.takeIf { source -> source.contains(hydratedSong) }
                         ?.playlistId
                 )
             }
@@ -2649,6 +2655,12 @@ object PlayerManager {
         enabled: Boolean,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
     ) = this.setShuffleImpl(enabled, commandSource)
+
+    fun setPlaybackMode(
+        repeatMode: Int,
+        shuffle: Boolean,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) = this.setPlaybackModeImpl(repeatMode, shuffle, commandSource)
 
     fun applyListenTogetherPlaybackMode(
         repeatMode: Int?,

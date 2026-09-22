@@ -751,8 +751,13 @@ internal object PlayerLyricsProvider {
             null
         }
         val localTranslatedLyric = localLyrics?.translatedLyric
+            val customEntry = if (AppContainer.isInitialized()) {
+                AppContainer.customLyricsRepo.getCustomLyrics(song.stableKey())
+            } else {
+                null
+            }
             val storedTranslatedLyric = resolveStoredLyricText(
-                currentLyric = song.matchedTranslatedLyric,
+                currentLyric = song.matchedTranslatedLyric ?: customEntry?.translatedLyric,
                 legacyLyric = song.originalTranslatedLyric
             )
             val downloadedTranslatedLyric = if (song.isLocalSong()) {
@@ -948,8 +953,13 @@ internal object PlayerLyricsProvider {
             } else {
                 null
             }
+            val customEntry = if (AppContainer.isInitialized()) {
+                AppContainer.customLyricsRepo.getCustomLyrics(song.stableKey())
+            } else {
+                null
+            }
             val storedLyric = resolveStoredLyricText(
-                currentLyric = song.matchedLyric,
+                currentLyric = song.matchedLyric ?: customEntry?.lyric,
                 legacyLyric = song.originalLyric
             )
             val downloadedLyric = if (song.isLocalSong()) {

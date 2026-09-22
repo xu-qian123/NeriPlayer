@@ -9,6 +9,7 @@
     <string name="player_next">Next</string>
     <string name="player_shuffle">Shuffle</string>
     <string name="player_repeat">Repeat</string>
+    <string name="player_playback_mode">Playback Mode</string>
     <string name="player_now_playing">Now Playing</string>
     <string name="player_no_playback">No Playback</string>
     <string name="widget_playback_4x2_label">Playback controls</string>

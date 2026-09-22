@@ -48,6 +48,9 @@
     <string name="local_playlist_sync_netease_empty">收藏为空，无需同步</string>
     <string name="local_playlist_sync_netease_no_supported">没有可同步的歌曲</string>
     <string name="local_playlist_sync_netease_all_synced">已同步到网易云，无需重复同步</string>
+    <string name="local_playlist_sync_netease_two_way">与网易云双向同步</string>
+    <string name="local_playlist_sync_netease_two_way_remote_only">已完成同步。网易云云端有额外的红心歌曲，未自动导入本地。</string>
+    <string name="local_playlist_sync_netease_two_way_summary">双向同步完成：新增红心 %1$d 首，两端均有 %2$d 首%3$s</string>
     <string name="local_playlist_sync_selected">同步选中 (%d)</string>
     <string name="local_playlist_sync_search">搜索可同步歌曲</string>
     <string name="local_playlist_sync_empty">没有可同步的歌曲</string>

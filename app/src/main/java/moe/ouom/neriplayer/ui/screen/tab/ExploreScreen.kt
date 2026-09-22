@@ -32,12 +32,17 @@ import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -73,6 +78,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -112,6 +118,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -132,6 +140,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.geometry.Offset
@@ -744,49 +753,111 @@ fun ExploreScreen(
                     .fillMaxWidth()
                     .padding(horizontal = searchPanelHorizontalPadding, vertical = 8.dp)
             ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = {
-                            onSearchQueryChange(it)
-                        },
-                        label = {
-                            Text(
-                                stringResource(
-                                    if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
-                                        R.string.explore_link_input_label
-                                    } else {
-                                        R.string.search_keyword
-                                    }
-                                )
+                    val isDark = isSystemInDarkTheme()
+                    val searchBgColor = if (isDark) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    }
+                    val searchBorderColor = if (isDark) {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    }
+                    val placeholderText = when {
+                        ui.selectedSearchSource == SearchSource.LINK_RECOGNITION -> {
+                            stringResource(R.string.explore_link_input_placeholder)
+                        }
+                        ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn -> {
+                            stringResource(R.string.netease_login_required_search_placeholder)
+                        }
+                        else -> {
+                            stringResource(
+                                if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+                                    R.string.explore_link_input_label
+                                } else {
+                                    R.string.search_keyword
+                                }
                             )
-                        },
-                        placeholder = {
-                            when {
-                                ui.selectedSearchSource == SearchSource.LINK_RECOGNITION -> {
-                                    Text(stringResource(R.string.explore_link_input_placeholder))
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .clip(ExploreSearchFieldShape)
+                            .background(searchBgColor)
+                            .border(
+                                width = 1.dp,
+                                color = searchBorderColor,
+                                shape = ExploreSearchFieldShape
+                            )
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
+                            )
+
+                            Spacer(Modifier.width(10.dp))
+
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = onSearchQueryChange,
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = {
+                                    submitExploreSearch()
+                                }),
+                                modifier = Modifier.weight(1f),
+                                decorationBox = { innerTextField ->
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = placeholderText,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    innerTextField()
                                 }
-                                ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn -> {
-                                    Text(stringResource(R.string.netease_login_required_search_placeholder))
+                            )
+
+                            AnimatedVisibility(
+                                visible = searchQuery.isNotEmpty(),
+                                enter = fadeIn() + scaleIn(),
+                                exit = fadeOut() + scaleOut()
+                            ) {
+                                HapticIconButton(
+                                    onClick = {
+                                        onSearchQueryChange("")
+                                        vm.search("")
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Clear",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                 }
                             }
-                        },
-                        leadingIcon = { Icon(Icons.Default.Search, "Search") },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                HapticIconButton(onClick = {
-                                    onSearchQueryChange("")
-                                    vm.search("")
-                                }) { Icon(Icons.Default.Clear, "Clear") }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = {
-                            submitExploreSearch()
-                        }),
-                        singleLine = true,
-                        shape = ExploreSearchFieldShape,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        }
+                    }
                     ExploreSearchHistoryRow(
                         history = visibleSearchHistory,
                         visible = shouldShowSearchHistory,
@@ -828,19 +899,32 @@ fun ExploreScreen(
                             selectedTabIndex = pagerState.currentPage,
                             edgePadding = 0.dp,
                             containerColor = Color.Transparent,
-                            contentColor = MaterialTheme.colorScheme.primary
+                            contentColor = MaterialTheme.colorScheme.primary,
+                            divider = {},
+                            indicator = {
+                                TabRowDefaults.PrimaryIndicator(
+                                    modifier = Modifier.tabIndicatorOffset(pagerState.currentPage),
+                                    width = 24.dp,
+                                    height = 3.dp,
+                                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                                )
+                            }
                         ) {
                             orderedSearchSources.forEachIndexed { index, source ->
+                                val selected = pagerState.currentPage == index
                                 Tab(
-                                    selected = pagerState.currentPage == index,
+                                    selected = selected,
                                     onClick = {
                                         scope.launch {
                                             pagerState.animateScrollToPage(index)
                                         }
                                     },
+                                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                     text = {
                                         Text(
                                             text = searchSourceLabel(source),
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                             maxLines = 1,
                                             softWrap = false,
                                             overflow = TextOverflow.Ellipsis
