@@ -99,7 +99,7 @@ fun HomeSectionsOrderDialog(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = stringResource(section.songSource.titleRes),
+                            text = stringResource(section.titleRes),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,

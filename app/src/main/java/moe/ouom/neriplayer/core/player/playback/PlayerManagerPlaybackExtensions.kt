@@ -600,6 +600,11 @@ internal fun PlayerManager.handleTrackEnded() {
                     commandSource = activePlaybackCommandSource,
                     bypassLoudVolumeWarning = true
                 )
+            } else if (_isRoamingModeFlow.value) {
+                markAutoTrackAdvance()
+                if (AppContainer.isInitialized()) {
+                    AppContainer.neteaseRoamingManager.onQueueEndReached()
+                }
             } else {
                 stopPlaybackPreservingQueue()
             }
@@ -653,7 +658,8 @@ internal fun PlayerManager.playPlaylistImpl(
     startIndex: Int,
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     bypassLoudVolumeWarning: Boolean = false,
-    localPlaylistId: Long? = null
+    localPlaylistId: Long? = null,
+    isRoaming: Boolean = false
 ) {
     ensureInitialized()
     check(initialized) { "Call PlayerManager.initialize(application) first." }
@@ -676,7 +682,8 @@ internal fun PlayerManager.playPlaylistImpl(
                     startIndex = startIndex,
                     commandSource = commandSource,
                     bypassLoudVolumeWarning = true,
-                    localPlaylistId = localPlaylistId
+                    localPlaylistId = localPlaylistId,
+                    isRoaming = isRoaming
                 )
             }
         )
@@ -685,10 +692,11 @@ internal fun PlayerManager.playPlaylistImpl(
     }
     NPLogger.d(
         "NERI-PlayerManager",
-        "playPlaylist: size=${songs.size}, requestedStart=$startIndex, resolvedStart=${startIndex.coerceIn(0, songs.lastIndex)}, source=$commandSource, target=${targetSong.name}, stack=[${debugStackHint()}]"
+        "playPlaylist: size=${songs.size}, requestedStart=$startIndex, resolvedStart=${startIndex.coerceIn(0, songs.lastIndex)}, source=$commandSource, target=${targetSong.name}, isRoaming=$isRoaming, stack=[${debugStackHint()}]"
     )
     suppressAutoResumeForCurrentSession = false
     consecutivePlayFailures = 0
+    _isRoamingModeFlow.value = isRoaming
     localPlaylistPlaybackSource = localPlaylistId?.let { playlistId ->
         LocalPlaylistPlaybackSource(
             playlistId = playlistId,
@@ -1853,7 +1861,8 @@ internal fun PlayerManager.nextImpl(
     )
     val hasNextTrack = currentIndex < currentPlaylist.lastIndex ||
         force ||
-        repeatModeSetting == Player.REPEAT_MODE_ALL
+        repeatModeSetting == Player.REPEAT_MODE_ALL ||
+        _isRoamingModeFlow.value
     if (!hasNextTrack) {
         NPLogger.d("NERI-Player", "Already at the end of the playlist.")
         return
@@ -1877,7 +1886,13 @@ internal fun PlayerManager.nextImpl(
     if (currentIndex < currentPlaylist.lastIndex) {
         currentIndex++
     } else {
-        if (force || repeatModeSetting == Player.REPEAT_MODE_ALL) {
+        if (_isRoamingModeFlow.value) {
+            NPLogger.d("NERI-PlayerManager", "At end of roaming queue, requesting next batch...")
+            if (AppContainer.isInitialized()) {
+                AppContainer.neteaseRoamingManager.onQueueEndReached()
+            }
+            return
+        } else if (force || repeatModeSetting == Player.REPEAT_MODE_ALL) {
             if (!reshuffleCurrentQueueForRepeatAllCycle()) {
                 currentIndex = 0
             }
@@ -1892,6 +1907,9 @@ internal fun PlayerManager.nextImpl(
         commandSource = commandSource,
         allowRememberedLongFormPosition = allowRememberedLongFormPosition
     )
+    if (_isRoamingModeFlow.value && AppContainer.isInitialized()) {
+        AppContainer.neteaseRoamingManager.checkPrefetchUpcomingSongs()
+    }
     emitPlaybackCommand(
         type = "NEXT",
         source = commandSource,

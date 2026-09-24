@@ -17,7 +17,15 @@
     <string name="home_search_hot">热歌</string>
     <string name="home_search_radar">私人雷达</string>
     <string name="home_netease_daily_songs">每日推荐</string>
-    <string name="home_netease_private_fm">私人 FM</string>
+    <string name="home_netease_private_fm">私人漫游</string>
+    <string name="home_section_featured_cards">专属推荐卡片</string>
+    <string name="home_roaming_subtitle_idle">根据你的音乐偏好实时漫游推荐</string>
+    <string name="home_roaming_playing_prefix">正在漫游 · %s</string>
+    <string name="home_roaming_paused_prefix">漫游已暂停 · %s</string>
+    <string name="home_roaming_loading">正在生成漫游推荐…</string>
+    <string name="home_roaming_need_login">私人漫游需要登录网易云音乐账号</string>
+    <string name="home_roaming_need_login_hint">登录网易云音乐，探索专属个性化漫游</string>
+    <string name="home_roaming_fetch_failed">漫游推荐获取失败，请重试</string>
     <string name="home_netease_new_songs">推荐新歌</string>
     <string name="home_netease_hot_rank">热歌榜</string>
     <string name="home_netease_new_rank">新歌榜</string>

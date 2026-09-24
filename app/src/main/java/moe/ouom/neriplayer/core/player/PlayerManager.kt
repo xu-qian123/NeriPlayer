@@ -170,6 +170,7 @@ import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToPlaylistImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
+import moe.ouom.neriplayer.core.player.persistence.appendSongsToQueueImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueNextImpl
 import moe.ouom.neriplayer.core.player.persistence.applyRemoteQueueUpdateImpl
 import moe.ouom.neriplayer.core.player.persistence.getLyricsImpl
@@ -550,6 +551,12 @@ object PlayerManager {
     @Volatile
     internal var localPlaylistPlaybackSource: LocalPlaylistPlaybackSource? = null
     internal val playbackDemandArbiter = PlaybackDemandArbiter()
+
+    internal val _isRoamingModeFlow = MutableStateFlow(false)
+    val isRoamingModeFlow: StateFlow<Boolean> = _isRoamingModeFlow
+    val isRoamingMode: Boolean get() = _isRoamingModeFlow.value
+
+    val currentQueueIndex: Int get() = currentIndex
 
     internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
     val currentQueueFlow: StateFlow<List<SongItem>> = _currentQueueFlow
@@ -2616,6 +2623,17 @@ object PlayerManager {
         localPlaylistId = playlistId
     )
 
+    fun playRoaming(
+        songs: List<SongItem>,
+        startIndex: Int = 0,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ): Unit = this.playPlaylistImpl(
+        songs = songs,
+        startIndex = startIndex,
+        commandSource = commandSource,
+        isRoaming = true
+    )
+
     fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) =
         this.playBiliVideoPartsImpl(videoInfo, startIndex, coverUrl)
 
@@ -2735,6 +2753,8 @@ object PlayerManager {
     fun addToQueueNext(song: SongItem) = addToQueueNextImpl(song)
 
     fun addToQueueEnd(song: SongItem) = addToQueueEndImpl(song)
+
+    fun appendSongsToQueue(songs: List<SongItem>) = appendSongsToQueueImpl(songs)
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) = moveQueueItemImpl(fromIndex, toIndex)
 

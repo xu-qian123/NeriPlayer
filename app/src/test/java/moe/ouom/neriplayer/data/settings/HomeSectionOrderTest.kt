@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.settings
 
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -17,9 +18,7 @@ class HomeSectionOrderTest {
         val custom = listOf(
             NeteaseHomeSectionId.TOP_HOT,
             NeteaseHomeSectionId.TOP_SOARING,
-            NeteaseHomeSectionId.PERSONAL_RADAR,
-            NeteaseHomeSectionId.DAILY_RECOMMEND,
-            NeteaseHomeSectionId.PRIVATE_FM,
+            NeteaseHomeSectionId.FEATURED_CARDS,
             NeteaseHomeSectionId.PERSONALIZED_NEW_SONGS,
             NeteaseHomeSectionId.TOP_NEW
         )
@@ -40,32 +39,23 @@ class HomeSectionOrderTest {
     }
 
     @Test
-    fun orderNeteaseHomeSectionsRespectsCustomOrder() {
-        data class Section(val id: NeteaseHomeSectionId, val name: String)
+    fun parseMapsLegacySectionIdsToFeaturedCards() {
+        val legacy = "PERSONAL_RADAR,DAILY_RECOMMEND,PRIVATE_FM,TOP_HOT"
+        val parsed = parseNeteaseHomeSectionOrder(legacy)
+        assertEquals(NeteaseHomeSectionId.FEATURED_CARDS, parsed[0])
+        assertEquals(NeteaseHomeSectionId.TOP_HOT, parsed[1])
+        assertEquals(DefaultNeteaseHomeSections.size, parsed.size)
+        assertEquals(DefaultNeteaseHomeSections.toSet(), parsed.toSet())
+    }
 
-        val radar = listOf(
-            Section(NeteaseHomeSectionId.PERSONAL_RADAR, "Radar"),
-            Section(NeteaseHomeSectionId.DAILY_RECOMMEND, "Daily")
-        )
-        val trending = listOf(
-            Section(NeteaseHomeSectionId.TOP_SOARING, "Soaring"),
-            Section(NeteaseHomeSectionId.TOP_HOT, "Hot")
-        )
-
-        val customOrder = listOf(
-            NeteaseHomeSectionId.TOP_HOT,
-            NeteaseHomeSectionId.PERSONAL_RADAR,
-            NeteaseHomeSectionId.TOP_SOARING,
-            NeteaseHomeSectionId.DAILY_RECOMMEND,
-            NeteaseHomeSectionId.PRIVATE_FM,
-            NeteaseHomeSectionId.PERSONALIZED_NEW_SONGS,
-            NeteaseHomeSectionId.TOP_NEW
-        )
-
-        val result = orderNeteaseHomeSections(radar, trending, customOrder) { it.id }
-        assertEquals(
-            listOf("Hot", "Radar", "Soaring", "Daily"),
-            result.map { it.name }
-        )
+    @Test
+    fun songSourceToHomeSectionIdMapsCorrectly() {
+        assertEquals(NeteaseHomeSectionId.TOP_SOARING, NeteaseHomeSongSource.TOP_SOARING.toHomeSectionId())
+        assertEquals(NeteaseHomeSectionId.PERSONALIZED_NEW_SONGS, NeteaseHomeSongSource.PERSONALIZED_NEW_SONGS.toHomeSectionId())
+        assertEquals(NeteaseHomeSectionId.TOP_HOT, NeteaseHomeSongSource.TOP_HOT.toHomeSectionId())
+        assertEquals(NeteaseHomeSectionId.TOP_NEW, NeteaseHomeSongSource.TOP_NEW.toHomeSectionId())
+        assertEquals(NeteaseHomeSectionId.FEATURED_CARDS, NeteaseHomeSongSource.PERSONAL_RADAR.toHomeSectionId())
+        assertEquals(NeteaseHomeSectionId.FEATURED_CARDS, NeteaseHomeSongSource.DAILY_RECOMMEND.toHomeSectionId())
+        assertEquals(NeteaseHomeSectionId.FEATURED_CARDS, NeteaseHomeSongSource.PRIVATE_FM.toHomeSectionId())
     }
 }

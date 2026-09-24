@@ -75,6 +75,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -177,6 +178,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LyricsScreen(
     lyrics: List<LyricEntry>,
+    isLoading: Boolean = false,
     rawLyrics: String? = null,
     rawTranslatedLyrics: String? = null,
     lyricBlurEnabled: Boolean,
@@ -616,6 +618,7 @@ fun LyricsScreen(
         ) {
             LyricsContentPane(
                 lyrics = lyrics,
+                isLoading = isLoading,
                 plainLyrics = plainLyrics,
                 plainTranslatedLyrics = plainTranslatedLyrics,
                 translatedLyrics = translatedLyrics.orEmpty(),
@@ -1141,6 +1144,7 @@ fun LyricsScreen(
 @Composable
 private fun LyricsContentPane(
     lyrics: List<LyricEntry>,
+    isLoading: Boolean = false,
     plainLyrics: List<LyricEntry>,
     plainTranslatedLyrics: List<LyricEntry>,
     translatedLyrics: List<LyricEntry>,
@@ -1165,6 +1169,31 @@ private fun LyricsContentPane(
     onLyricLongClick: (LyricEntry) -> Unit,
     onSeekTo: (Long) -> Unit
 ) {
+    if (isLoading && lyrics.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(36.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 3.dp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = stringResource(R.string.lyrics_loading),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
+
     if (lyrics.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),

@@ -251,7 +251,8 @@ private fun LocalizedAppContent(
     content: @Composable () -> Unit
 ) {
     val baseContext = LocalContext.current
-    val localizedContext = remember(baseContext, language) {
+    val currentConfig = LocalConfiguration.current
+    val localizedContext = remember(baseContext, language, currentConfig) {
         LanguageManager.localizedContext(baseContext, language)
     }
     CompositionLocalProvider(

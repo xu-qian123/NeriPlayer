@@ -724,10 +724,10 @@ class NeteaseClient {
     }
 
     @Throws(IOException::class)
-    fun getDailyRecommendedSongs(afresh: Boolean = false): String {
+    fun getDailyRecommendedSongs(): String {
         return callWeApi(
             "/v3/discovery/recommend/songs",
-            mapOf("afresh" to afresh.toString()),
+            mapOf("total" to "true"),
             usePersistedCookies = true
         )
     }

@@ -65,7 +65,32 @@ class NowPlayingScreenTest {
             NowPlayingWideLyricsMode.NO_LYRICS,
             resolveNowPlayingWideLyricsMode(
                 hasLyrics = false,
-                advancedLyricsEnabled = false
+                advancedLyricsEnabled = false,
+                isLoading = false
+            )
+        )
+    }
+
+    @Test
+    fun `wide lyrics show loading state when loading and lyrics unavailable`() {
+        assertEquals(
+            NowPlayingWideLyricsMode.LOADING,
+            resolveNowPlayingWideLyricsMode(
+                hasLyrics = false,
+                advancedLyricsEnabled = true,
+                isLoading = true
+            )
+        )
+    }
+
+    @Test
+    fun `wide lyrics show lyrics even when background loading if lyrics already available`() {
+        assertEquals(
+            NowPlayingWideLyricsMode.ADVANCED,
+            resolveNowPlayingWideLyricsMode(
+                hasLyrics = true,
+                advancedLyricsEnabled = true,
+                isLoading = true
             )
         )
     }

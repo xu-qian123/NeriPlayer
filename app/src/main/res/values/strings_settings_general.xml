@@ -58,10 +58,10 @@
     <string name="settings_home_card_ytmusic_more_recommendations_desc">控制更多 YouTube Music 推荐与歌单栏目</string>
     <string name="settings_home_card_netease_trending">热力与榜单</string>
     <string name="settings_home_card_netease_trending_desc">显示热力飙升、推荐新歌、热歌榜和新歌榜</string>
-    <string name="settings_home_card_netease_radar">私人雷达与雷达歌单</string>
-    <string name="settings_home_card_netease_radar_desc">显示私人雷达、雷达歌单、每日推荐和私人 FM</string>
-    <string name="settings_home_card_netease_recommended">推荐歌单</string>
-    <string name="settings_home_card_netease_recommended_desc">显示为你推荐、每日推荐、精品、热门和 ACG 歌单</string>
+    <string name="settings_home_card_netease_radar">专属推荐与雷达歌单</string>
+    <string name="settings_home_card_netease_radar_desc">显示每日推荐、私人雷达、私人漫游卡片流以及雷达歌单</string>
+    <string name="settings_home_card_netease_recommended">探索分类歌单</string>
+    <string name="settings_home_card_netease_recommended_desc">显示为你推荐、精品歌单、热门歌单与 ACG 歌单等分类内容</string>
     <string name="settings_home_card_netease_login_required">登录网易云后会加入每日推荐和私人 FM 等个性化源</string>
     <string name="settings_personalization_start_section">启动与输入</string>
     <string name="settings_personalization_start_section_desc">设置默认入口和键盘弹出</string>

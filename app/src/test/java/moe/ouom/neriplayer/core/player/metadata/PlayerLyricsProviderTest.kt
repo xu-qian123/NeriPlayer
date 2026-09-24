@@ -755,4 +755,107 @@ class PlayerLyricsProviderTest {
         )
         assertEquals("[00:01.00]自定义歌词", resolved)
     }
+
+    @Test
+    fun `automaticWordTimedLyricSourceOrder prioritizes Kugou, QQ, AMLL, CloudMusic`() {
+        assertEquals(
+            listOf(
+                EditableLyricMatchSource.KUGOU,
+                EditableLyricMatchSource.QQ_MUSIC,
+                EditableLyricMatchSource.AMLL_TTML,
+                EditableLyricMatchSource.CLOUD_MUSIC
+            ),
+            automaticWordTimedLyricSourceOrder
+        )
+    }
+
+    @Test
+    fun `selectRankedDurationMatchedExternalLyrics with requireWordTiming rejects non-word-timed candidates`() {
+        val plainLrcCandidate = rankedCandidate(
+            id = "kugou_plain",
+            source = EditableLyricMatchSource.KUGOU,
+            lyrics = "[00:01.00]Line 1\n[00:03.00]Line 2"
+        )
+        val wordTimedCandidate = rankedCandidate(
+            id = "cloud_timed",
+            source = EditableLyricMatchSource.CLOUD_MUSIC,
+            lyrics = "[1000,2000](1000,500,0)Word(1500,500,0)Two"
+        )
+
+        val nonTimedMatch = PlayerLyricsProvider.selectRankedDurationMatchedExternalLyrics(
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            matches = listOf(plainLrcCandidate, wordTimedCandidate),
+            requireWordTiming = false
+        )
+        // Without requiring word timing, Kugou is preferred because of source priority
+        assertEquals(EditableLyricMatchSource.KUGOU, nonTimedMatch?.source)
+
+        val wordTimedMatch = PlayerLyricsProvider.selectRankedDurationMatchedExternalLyrics(
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            matches = listOf(plainLrcCandidate, wordTimedCandidate),
+            requireWordTiming = true
+        )
+        // With requireWordTiming, Kugou plain LRC is skipped and Cloud Music word-timed candidate is selected
+        assertEquals(EditableLyricMatchSource.CLOUD_MUSIC, wordTimedMatch?.source)
+        assertTrue(wordTimedMatch?.lyrics?.any { !it.words.isNullOrEmpty() } == true)
+        assertEquals("[1000,2000](1000,500,0)Word(1500,500,0)Two", wordTimedMatch?.rawLyric)
+    }
+
+    @Test
+    fun `loadFirstUsableAutomaticExternalLyrics falls through until word-timed lyrics found`() = runTest {
+        val yrcLyric = "[1000,2000](1000,500,0)Word(1500,500,0)Two"
+        val plainLrcLyric = "[00:01.00]Plain LRC line"
+        val visitedSources = mutableListOf<EditableLyricMatchSource>()
+
+        val selected = PlayerLyricsProvider.loadFirstUsableAutomaticExternalLyrics(
+            request = automaticLyricRequest().copy(sources = automaticWordTimedLyricSourceOrder.toSet()),
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            sourceOrder = automaticWordTimedLyricSourceOrder,
+            requireWordTiming = true
+        ) { source ->
+            visitedSources += source
+            when (source) {
+                EditableLyricMatchSource.KUGOU -> listOf(
+                    rankedCandidate(
+                        id = "kugou",
+                        source = source,
+                        lyrics = plainLrcLyric
+                    )
+                )
+                EditableLyricMatchSource.QQ_MUSIC -> listOf(
+                    rankedCandidate(
+                        id = "qq",
+                        source = source,
+                        lyrics = plainLrcLyric
+                    )
+                )
+                EditableLyricMatchSource.AMLL_TTML -> listOf(
+                    rankedCandidate(
+                        id = "amll",
+                        source = source,
+                        lyrics = yrcLyric
+                    )
+                )
+                else -> error("CLOUD_MUSIC should not be called once AMLL succeeds")
+            }
+        }
+
+        assertEquals(EditableLyricMatchSource.AMLL_TTML, selected?.source)
+        assertEquals(
+            listOf(
+                EditableLyricMatchSource.KUGOU,
+                EditableLyricMatchSource.QQ_MUSIC,
+                EditableLyricMatchSource.AMLL_TTML
+            ),
+            visitedSources
+        )
+        assertTrue(selected?.lyrics?.any { !it.words.isNullOrEmpty() } == true)
+        assertEquals(yrcLyric, selected?.rawLyric)
+    }
 }

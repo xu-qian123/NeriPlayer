@@ -17,7 +17,15 @@
     <string name="home_search_hot">Hot Songs</string>
     <string name="home_search_radar">Personal Radar</string>
     <string name="home_netease_daily_songs">Daily Picks</string>
-    <string name="home_netease_private_fm">Private FM</string>
+    <string name="home_netease_private_fm">Private Roaming</string>
+    <string name="home_section_featured_cards">Featured Cards</string>
+    <string name="home_roaming_subtitle_idle">Real-time roaming recommendations tailored to your taste</string>
+    <string name="home_roaming_playing_prefix">Roaming · %s</string>
+    <string name="home_roaming_paused_prefix">Roaming paused · %s</string>
+    <string name="home_roaming_loading">Generating roaming recommendations…</string>
+    <string name="home_roaming_need_login">Private Roaming requires signing in to NetEase Cloud Music</string>
+    <string name="home_roaming_need_login_hint">Sign in to NetEase Cloud Music to explore personalized roaming</string>
+    <string name="home_roaming_fetch_failed">Failed to fetch roaming recommendations, please retry</string>
     <string name="home_netease_new_songs">New Picks</string>
     <string name="home_netease_hot_rank">Hot Songs Chart</string>
     <string name="home_netease_new_rank">New Songs Chart</string>

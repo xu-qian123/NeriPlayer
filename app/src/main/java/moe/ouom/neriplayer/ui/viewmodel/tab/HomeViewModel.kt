@@ -956,7 +956,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun fetchSongSource(source: NeteaseHomeSongSource): List<SongItem> {
         if (source == NeteaseHomeSongSource.PRIVATE_FM) {
-            return fetchPrivateFmSongs()
+            return emptyList()
         }
         val raw = withContext(Dispatchers.IO) {
             fetchSongSourceRaw(source)
@@ -977,9 +977,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 n = HOME_NETEASE_SONG_LIMIT,
                 s = 0
             )
-            NeteaseHomeSongSource.DAILY_RECOMMEND -> client.getDailyRecommendedSongs(
-                afresh = true
-            )
+            NeteaseHomeSongSource.DAILY_RECOMMEND -> client.getDailyRecommendedSongs()
             NeteaseHomeSongSource.PRIVATE_FM -> client.getPersonalFmSongs()
             NeteaseHomeSongSource.PERSONALIZED_NEW_SONGS -> client.getPersonalizedNewSongs(
                 limit = HOME_NETEASE_SONG_LIMIT,
@@ -999,27 +997,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun fetchPrivateFmSongs(): List<SongItem> {
-        var songs = emptyList<SongItem>()
-        for (batchIndex in 0 until HOME_PRIVATE_FM_MAX_BATCHES) {
-            val raw = withContext(Dispatchers.IO) {
-                client.getPersonalFmSongs()
-            }
-            val batch = parseSongsOnWorker(raw)
-            if (batch.isEmpty()) break
-
-            val merged = appendUniqueNeteaseHomeSongs(
-                current = songs,
-                next = batch,
-                limit = HOME_NETEASE_SONG_LIMIT
-            )
-            if (merged.size == songs.size) {
-                NPLogger.d(TAG, "private FM returned no new songs at batch=$batchIndex")
-                break
-            }
-            songs = merged
-            if (songs.size >= HOME_NETEASE_SONG_LIMIT) break
+        val raw = withContext(Dispatchers.IO) {
+            client.getPersonalFmSongs()
         }
-        return songs
+        return parseSongsOnWorker(raw)
     }
 
     private suspend fun fetchPlaylistSource(

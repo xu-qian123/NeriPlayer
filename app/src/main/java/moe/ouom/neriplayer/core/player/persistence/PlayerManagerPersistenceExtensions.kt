@@ -1388,6 +1388,56 @@ internal fun PlayerManager.addToQueueEndImpl(song: SongItem) {
     }
 }
 
+internal fun PlayerManager.appendSongsToQueueImpl(songs: List<SongItem>) {
+    ensureInitialized()
+    if (!initialized || songs.isEmpty()) return
+    if (currentPlaylist.isEmpty()) {
+        playPlaylist(songs, 0)
+        return
+    }
+
+    val currentSong = _currentSongFlow.value
+    val newPlaylist = currentPlaylist.toMutableList()
+    val hydratedSongs = if (AppContainer.isInitialized()) {
+        songs.map { song -> AppContainer.customLyricsRepo.hydrateSong(song) ?: song }
+    } else {
+        songs
+    }
+
+    val existingKeys = newPlaylist.mapTo(LinkedHashSet(newPlaylist.size + hydratedSongs.size)) { it.stableKey() }
+    var appendedCount = 0
+    for (s in hydratedSongs) {
+        val key = s.stableKey()
+        if (!existingKeys.contains(key)) {
+            newPlaylist.add(s)
+            existingKeys.add(key)
+            appendedCount++
+        }
+    }
+
+    if (appendedCount == 0) return
+
+    currentPlaylist = newPlaylist
+    _currentQueueFlow.value = currentPlaylist
+    currentIndex = if (currentSong != null) {
+        queueIndexOf(currentSong, newPlaylist).takeIf { it >= 0 }
+            ?: currentIndex.coerceIn(0, newPlaylist.lastIndex)
+    } else {
+        currentIndex.coerceIn(0, newPlaylist.lastIndex)
+    }
+    bumpCurrentQueueDisplayRevision()
+
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "appendSongsToQueue(): appended=$appendedCount, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex"
+    )
+    emitQueueUpdateCommand()
+
+    ioScope.launch {
+        persistState()
+    }
+}
+
 private fun PlayerManager.emitQueueUpdateCommand(shouldPlay: Boolean? = null) {
     emitPlaybackCommand(
         type = "SET_QUEUE",

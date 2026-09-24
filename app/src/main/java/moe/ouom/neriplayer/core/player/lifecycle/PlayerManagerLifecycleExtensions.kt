@@ -974,6 +974,9 @@ internal fun PlayerManager.initializeImpl(
                 if (player.playWhenReady || player.isPlaying) {
                     startProgressUpdates()
                 }
+                if (_isRoamingModeFlow.value && AppContainer.isInitialized()) {
+                    AppContainer.neteaseRoamingManager.checkPrefetchUpcomingSongs()
+                }
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {

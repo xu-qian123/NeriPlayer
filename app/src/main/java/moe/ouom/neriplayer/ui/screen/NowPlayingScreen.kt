@@ -475,6 +475,7 @@ private fun StableNowPlayingCoverImage(
 }
 
 internal enum class NowPlayingWideLyricsMode {
+    LOADING,
     NO_LYRICS,
     ADVANCED,
     SYNCED
@@ -494,8 +495,10 @@ internal enum class NowPlayingLyricsSharedTransitionElement(
 
 internal fun resolveNowPlayingWideLyricsMode(
     hasLyrics: Boolean,
-    advancedLyricsEnabled: Boolean
+    advancedLyricsEnabled: Boolean,
+    isLoading: Boolean = false
 ): NowPlayingWideLyricsMode = when {
+    isLoading && !hasLyrics -> NowPlayingWideLyricsMode.LOADING
     !hasLyrics -> NowPlayingWideLyricsMode.NO_LYRICS
     advancedLyricsEnabled -> NowPlayingWideLyricsMode.ADVANCED
     else -> NowPlayingWideLyricsMode.SYNCED
@@ -2115,6 +2118,7 @@ fun NowPlayingScreen(
         currentSong?.mediaUri,
         currentSong?.localFilePath
     )
+    var isLyricsLoading by remember(currentLyricSourceKey) { mutableStateOf(currentSong != null) }
     var lyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     var translatedLyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     var rawLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
@@ -2291,7 +2295,9 @@ fun NowPlayingScreen(
         currentMediaUrl
     ) {
         val song = currentSong
-        val loadedLyricsState = withContext(Dispatchers.IO) {
+        isLyricsLoading = song != null
+        try {
+            val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
             val localLyrics = if (isLocalSong) {
                 runCatching { LocalMediaSupport.inspectLyricsFast(song) }
@@ -2515,7 +2521,10 @@ fun NowPlayingScreen(
         plainLyrics = loadedLyricsState.plainLyrics
         plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
         embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
+    } finally {
+        isLyricsLoading = false
     }
+}
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
     }
@@ -2717,6 +2726,7 @@ fun NowPlayingScreen(
                         // 歌词全屏页面
                         LyricsScreen(
                             lyrics = lyrics,
+                            isLoading = isLyricsLoading,
                             rawLyrics = rawLyricsText,
                             rawTranslatedLyrics = rawTranslatedLyricsText,
                             lyricBlurEnabled = lyricBlurEnabled,
@@ -3530,9 +3540,33 @@ fun NowPlayingScreen(
                             when (
                                 resolveNowPlayingWideLyricsMode(
                                     hasLyrics = lyrics.isNotEmpty(),
-                                    advancedLyricsEnabled = advancedLyricsEnabled
+                                    advancedLyricsEnabled = advancedLyricsEnabled,
+                                    isLoading = isLyricsLoading
                                 )
                             ) {
+                                NowPlayingWideLyricsMode.LOADING -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(horizontal = 28.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(32.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            strokeWidth = 3.dp
+                                        )
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(
+                                            text = stringResource(R.string.lyrics_loading),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+
                                 NowPlayingWideLyricsMode.ADVANCED -> {
                                     val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
                                     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition

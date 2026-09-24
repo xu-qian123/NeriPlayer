@@ -51,9 +51,11 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.NETEASE_DAILY_RECOMMEND_PLAYLIST_ID
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseRadarPlaylistDefinitions
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteaseHomeSongs
 import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteasePlaylistDetailSummaryOrNull
 import moe.ouom.neriplayer.ui.viewmodel.tab.toPlaylistSummary
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -366,6 +368,11 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         forceRefresh: Boolean,
         loadGeneration: Long
     ) {
+        if (playlist.id == NETEASE_DAILY_RECOMMEND_PLAYLIST_ID) {
+            loadDailyRecommendPlaylist(playlist, loadGeneration)
+            return
+        }
+
         var radarCacheContext = neteaseRadarCacheContext(cookieRepo.getCookiesOnce())
         val requestStartedAtMs = System.currentTimeMillis()
         val cached = readCompatiblePlaylistCache(playlist.id)
@@ -503,6 +510,44 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
             _uiState.value = _uiState.value.copy(
                 loading = false,
                 error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
+            )
+        }
+    }
+
+    private suspend fun loadDailyRecommendPlaylist(
+        playlist: PlaylistSummary,
+        loadGeneration: Long
+    ) {
+        try {
+            val raw = withContext(Dispatchers.IO) {
+                syncNeteaseClientCookies()
+                client.getDailyRecommendedSongs()
+            }
+            if (playlistLoadGeneration != loadGeneration) return
+            val songs = parseNeteaseHomeSongs(raw)
+            val cover = playlist.picUrl.ifBlank {
+                songs.firstOrNull()?.coverUrl.orEmpty()
+            }
+            val header = NeteaseCollectionHeader(
+                id = NETEASE_DAILY_RECOMMEND_PLAYLIST_ID,
+                isAlbum = false,
+                name = playlist.name.ifBlank { getApplication<Application>().getString(R.string.home_netease_daily_songs) },
+                coverUrl = toHttps(cover) ?: "",
+                playCount = 0L,
+                trackCount = songs.size
+            )
+            _uiState.value = NeteaseCollectionDetailUiState(
+                loading = false,
+                header = header,
+                tracks = songs
+            )
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            if (playlistLoadGeneration != loadGeneration) return
+            NPLogger.e(TAG_PD, "loadDailyRecommendPlaylist failed", e)
+            _uiState.value = _uiState.value.copy(
+                loading = false,
+                error = e.message ?: "加载每日推荐失败"
             )
         }
     }

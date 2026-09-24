@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal const val NETEASE_DAILY_RECOMMEND_PLAYLIST_ID = -100L
 internal const val NETEASE_PRIVATE_RADAR_PLAYLIST_ID = 3_136_952_023L
 internal const val NETEASE_TOPLIST_SOARING_ID = 19_723_756L
 internal const val NETEASE_TOPLIST_NEW_ID = 3_779_629L
@@ -24,7 +25,7 @@ enum class NeteaseHomeSongSource(
     TOP_SOARING(R.string.recommend_trending, requiresLogin = false),
     PERSONAL_RADAR(R.string.recommend_radar, requiresLogin = false),
     DAILY_RECOMMEND(R.string.home_netease_daily_songs, requiresLogin = true),
-    PRIVATE_FM(R.string.home_netease_private_fm, requiresLogin = true),
+    PRIVATE_FM(R.string.home_netease_private_fm, requiresLogin = false),
     PERSONALIZED_NEW_SONGS(R.string.home_netease_new_songs, requiresLogin = false),
     TOP_HOT(R.string.home_netease_hot_rank, requiresLogin = false),
     TOP_NEW(R.string.home_netease_new_rank, requiresLogin = false)
@@ -55,9 +56,10 @@ internal val NeteaseRadarPlaylistDefinitions = listOf(
 )
 
 internal fun isNeteaseRadarPlaylist(playlistId: Long): Boolean {
-    return NeteaseRadarPlaylistDefinitions.any { definition ->
-        definition.id == playlistId
-    }
+    return playlistId == NETEASE_PRIVATE_RADAR_PLAYLIST_ID ||
+        NeteaseRadarPlaylistDefinitions.any { definition ->
+            definition.id == playlistId
+        }
 }
 
 internal val NeteaseHomeTrendingSongSources = listOf(

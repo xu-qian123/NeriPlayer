@@ -96,10 +96,14 @@ object LanguageManager {
 
         val isAppContext = context.applicationContext === context
         if (isAppContext && cachedAppContext != null && cachedAppLocale == locale) {
-            if (Locale.getDefault() != locale) {
-                Locale.setDefault(locale)
+            val cachedUiMode = cachedAppContext!!.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            val currentUiMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            if (cachedUiMode == currentUiMode) {
+                if (Locale.getDefault() != locale) {
+                    Locale.setDefault(locale)
+                }
+                return cachedAppContext!!
             }
-            return cachedAppContext!!
         }
 
         if (Locale.getDefault() != locale) {

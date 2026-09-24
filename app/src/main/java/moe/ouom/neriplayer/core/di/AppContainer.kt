@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricsMatcher
 import moe.ouom.neriplayer.core.api.lyrics.KugouLyricsClient
 import moe.ouom.neriplayer.core.api.lyrics.LrcLibClient
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.core.roaming.NeteasePrivateRoamingManager
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
@@ -348,6 +349,14 @@ object AppContainer {
                 client.setPersistedCookies(cookies)
             }
         }
+    }
+
+    val neteaseRoamingManager by lazy {
+        NeteasePrivateRoamingManager(
+            application = application,
+            neteaseClient = neteaseClient,
+            cookieRepo = neteaseCookieRepo
+        )
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }

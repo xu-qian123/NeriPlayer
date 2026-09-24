@@ -3,6 +3,7 @@
     <!-- Lyrics -->
     <string name="lyrics_title">Lyrics</string>
     <string name="lyrics_no_lyrics">No Lyrics</string>
+    <string name="lyrics_loading">Loading…</string>
     <string name="lyrics_blur">Blur</string>
     <string name="lyrics_blur_effect">Lyrics Blur</string>
     <string name="lyrics_blur_desc">Blur inactive lines</string>
